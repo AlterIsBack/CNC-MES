@@ -1,4 +1,4 @@
-﻿using CNCMes.Client.Workflow.Models;
+using CNCMes.Client.Workflow.Models;
 
 namespace CNCMes.Client.Workflow;
 
@@ -38,8 +38,7 @@ public class NodeDetailPanel : UserControl
     private Label _lblSubWorkerTaskStatus = null!;
 
     private Button _btnStatusReady = null!;
-    private Button _btnStatusStart = null!;
-    private Button _btnStatusInspect = null!;
+    private Button _btnStatusRunning = null!;
     private Button _btnStatusComplete = null!;
     private Button _btnStatusIssue = null!;
     private Button _btnDeleteNode = null!;
@@ -164,29 +163,25 @@ public class NodeDetailPanel : UserControl
         mainLayout.Controls.Add(row3, 0, 3);
 
         // 4: Status Quick Action Buttons (High contrast & readable)
-        var row4 = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 5, Margin = new Padding(0, 3, 0, 3) };
-        for (int i = 0; i < 5; i++) row4.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20f));
+        var row4 = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, Margin = new Padding(0, 3, 0, 3) };
+        for (int i = 0; i < 4; i++) row4.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25f));
 
-        _btnStatusReady = CreateFlatButton("대기", Color.FromArgb(51, 65, 85), Color.White);
+        _btnStatusReady = CreateFlatButton("대기중", Color.FromArgb(51, 65, 85), Color.White);
         _btnStatusReady.Click += (s, e) => TriggerStatusChange(NodeStatus.Ready);
 
-        _btnStatusStart = CreateFlatButton("▶가공", Color.FromArgb(5, 150, 105), Color.White);
-        _btnStatusStart.Click += (s, e) => TriggerStatusChange(NodeStatus.Running);
+        _btnStatusRunning = CreateFlatButton("진행중", Color.FromArgb(5, 150, 105), Color.White);
+        _btnStatusRunning.Click += (s, e) => TriggerStatusChange(NodeStatus.Running);
 
-        _btnStatusInspect = CreateFlatButton("📐측정", Color.FromArgb(217, 119, 6), Color.White);
-        _btnStatusInspect.Click += (s, e) => TriggerStatusChange(NodeStatus.PendingCheck);
-
-        _btnStatusComplete = CreateFlatButton("☑완료", Color.FromArgb(2, 132, 199), Color.White);
+        _btnStatusComplete = CreateFlatButton("완료", Color.FromArgb(2, 132, 199), Color.White);
         _btnStatusComplete.Click += (s, e) => TriggerStatusChange(NodeStatus.Completed);
 
-        _btnStatusIssue = CreateFlatButton("🚨이슈", Color.FromArgb(220, 38, 38), Color.White);
+        _btnStatusIssue = CreateFlatButton("이슈", Color.FromArgb(220, 38, 38), Color.White);
         _btnStatusIssue.Click += (s, e) => TriggerStatusChange(NodeStatus.Issue);
 
         row4.Controls.Add(_btnStatusReady, 0, 0);
-        row4.Controls.Add(_btnStatusStart, 1, 0);
-        row4.Controls.Add(_btnStatusInspect, 2, 0);
-        row4.Controls.Add(_btnStatusComplete, 3, 0);
-        row4.Controls.Add(_btnStatusIssue, 4, 0);
+        row4.Controls.Add(_btnStatusRunning, 1, 0);
+        row4.Controls.Add(_btnStatusComplete, 2, 0);
+        row4.Controls.Add(_btnStatusIssue, 3, 0);
         mainLayout.Controls.Add(row4, 0, 4);
 
         // 5: Details / Memo Box
@@ -338,11 +333,10 @@ public class NodeDetailPanel : UserControl
 
     private void UpdateStatusButtonsHighlight(NodeStatus status)
     {
-        _btnStatusReady.FlatAppearance.BorderSize = status == NodeStatus.Ready ? 2 : 0;
-        _btnStatusStart.FlatAppearance.BorderSize = status == NodeStatus.Running ? 2 : 0;
-        _btnStatusInspect.FlatAppearance.BorderSize = status == NodeStatus.PendingCheck ? 2 : 0;
-        _btnStatusComplete.FlatAppearance.BorderSize = status == NodeStatus.Completed ? 2 : 0;
-        _btnStatusIssue.FlatAppearance.BorderSize = status == NodeStatus.Issue ? 2 : 0;
+        _btnStatusReady.FlatAppearance.BorderSize = (status == NodeStatus.Ready) ? 2 : 0;
+        _btnStatusRunning.FlatAppearance.BorderSize = (status == NodeStatus.Running || status == NodeStatus.PendingCheck) ? 2 : 0;
+        _btnStatusComplete.FlatAppearance.BorderSize = (status == NodeStatus.Completed) ? 2 : 0;
+        _btnStatusIssue.FlatAppearance.BorderSize = (status == NodeStatus.Issue) ? 2 : 0;
     }
 
     private void SaveChangesToNode()
@@ -461,12 +455,12 @@ public class NodeDetailPanel : UserControl
 
     private static string GetStatusText(NodeStatus s) => s switch
     {
-        NodeStatus.Ready => "대기",
-        NodeStatus.Running => "가공 진행중",
-        NodeStatus.PendingCheck => "측정 대기",
-        NodeStatus.Completed => "가공 완료",
-        NodeStatus.Issue => "긴급 이슈",
-        _ => "대기"
+        NodeStatus.Ready => "대기중",
+        NodeStatus.Running => "진행중",
+        NodeStatus.PendingCheck => "진행중 (측정)",
+        NodeStatus.Completed => "완료",
+        NodeStatus.Issue => "이슈발생",
+        _ => "대기중"
     };
 
     private static Color GetStatusColor(NodeStatus s) => s switch

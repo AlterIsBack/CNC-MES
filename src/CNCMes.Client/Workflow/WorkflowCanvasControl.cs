@@ -358,6 +358,38 @@ public class WorkflowCanvasControl : UserControl
 
             // Draw arrow head at target
             DrawArrowHead(g, c2, p2, edgeColor);
+
+            // Draw sub-worker movement / machine transfer direction badge along edge
+            bool isDiffMachine = !string.IsNullOrEmpty(fromNode.MachineId) && !string.IsNullOrEmpty(toNode.MachineId) && !fromNode.MachineId.Equals(toNode.MachineId, StringComparison.OrdinalIgnoreCase);
+            bool isDelegation = edge.Type == EdgeType.Delegation;
+
+            if (isDiffMachine || isDelegation)
+            {
+                float t = 0.5f;
+                float midX = (1 - t) * (1 - t) * (1 - t) * p1.X + 3 * (1 - t) * (1 - t) * t * c1.X + 3 * (1 - t) * t * t * c2.X + t * t * t * p2.X;
+                float midY = (1 - t) * (1 - t) * (1 - t) * p1.Y + 3 * (1 - t) * (1 - t) * t * c1.Y + 3 * (1 - t) * t * t * c2.Y + t * t * t * p2.Y;
+
+                bool isSubworker = isDelegation || toNode.Category == NodeCategory.Collaboration || fromNode.Category == NodeCategory.Collaboration;
+                string badgeText = isDiffMachine
+                    ? (isSubworker ? $"👥 서브인원 이동: {fromNode.MachineId} ➔ {toNode.MachineId}" : $"🔄 설비이송: {fromNode.MachineId} ➔ {toNode.MachineId}")
+                    : $"👥 서브인원 지원: {toNode.Assignee}";
+
+                using var fontBadge = new Font("맑은 고딕", 7.2f, FontStyle.Bold);
+                var textSize = g.MeasureString(badgeText, fontBadge);
+                var badgeRect = new RectangleF(midX - textSize.Width / 2f - 6f, midY - textSize.Height / 2f - 3f, textSize.Width + 12f, textSize.Height + 6f);
+
+                Color badgeBg = isSubworker ? Color.FromArgb(240, 30, 20, 50) : Color.FromArgb(240, 15, 23, 42);
+                Color badgeBorder = isSubworker ? Color.FromArgb(168, 85, 247) : Color.FromArgb(56, 189, 248);
+                Color badgeTextColor = isSubworker ? Color.FromArgb(233, 213, 255) : Color.FromArgb(186, 230, 253);
+
+                using var bgB = new SolidBrush(badgeBg);
+                using var borderP = new Pen(badgeBorder, 1.2f);
+                DrawRoundedRectangle(g, bgB, borderP, badgeRect, 4f);
+
+                using var textB = new SolidBrush(badgeTextColor);
+                var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+                g.DrawString(badgeText, fontBadge, textB, badgeRect, sf);
+            }
         }
     }
 
@@ -450,17 +482,36 @@ public class WorkflowCanvasControl : UserControl
                 g.DrawString($"[{GetCategoryKorean(node.Category)}]", fontCat, catTextBrush, pillRect, sf);
             }
 
-            // Machine Pill
+            // Machine Pill (Color-coded by equipment with icon)
             if (!string.IsNullOrEmpty(node.MachineId))
             {
-                var machRect = new RectangleF(bounds.Right - 58, bounds.Y + 8, 48, 17);
-                using var machBg = new SolidBrush(Color.FromArgb(25, 255, 255, 255));
-                using var machPen = new Pen(Color.FromArgb(60, 255, 255, 255), 1f);
+                var machRect = new RectangleF(bounds.Right - 68, bounds.Y + 8, 58, 18);
+                Color machBgColor = node.MachineId switch
+                {
+                    "R01" => Color.FromArgb(45, 14, 165, 233), // Sky
+                    "R02" => Color.FromArgb(45, 16, 185, 129), // Emerald
+                    "R03" or "R04" or "R05" => Color.FromArgb(45, 59, 130, 246), // Blue
+                    "측정실" => Color.FromArgb(50, 245, 158, 11), // Amber
+                    "세척실" => Color.FromArgb(45, 99, 102, 241), // Indigo
+                    "품질팀" => Color.FromArgb(45, 217, 70, 239), // Fuchsia
+                    _ => Color.FromArgb(40, 148, 163, 184)
+                };
+                Color machBorderColor = node.MachineId switch
+                {
+                    "R01" => Color.FromArgb(140, 14, 165, 233),
+                    "R02" => Color.FromArgb(140, 16, 185, 129),
+                    "측정실" => Color.FromArgb(160, 245, 158, 11),
+                    "세척실" => Color.FromArgb(140, 99, 102, 241),
+                    "품질팀" => Color.FromArgb(140, 217, 70, 239),
+                    _ => Color.FromArgb(100, 148, 163, 184)
+                };
+                using var machBg = new SolidBrush(machBgColor);
+                using var machPen = new Pen(machBorderColor, 1.2f);
                 DrawRoundedRectangle(g, machBg, machPen, machRect, 4f);
 
-                using var machTextBrush = new SolidBrush(Palette.TextMuted);
+                using var machTextBrush = new SolidBrush(Color.White);
                 var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-                g.DrawString(node.MachineId, fontMeta, machTextBrush, machRect, sf);
+                g.DrawString($"⚙ {node.MachineId}", fontMeta, machTextBrush, machRect, sf);
             }
 
             // 4. Title Text

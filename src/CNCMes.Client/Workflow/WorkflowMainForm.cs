@@ -1,4 +1,4 @@
-﻿using System.Data;
+using System.Data;
 using System.Drawing.Drawing2D;
 using System.Text.Json;
 using CNCMes.Client.Workflow.Models;
@@ -99,7 +99,7 @@ public class WorkflowMainForm : Form
 
     private void InitializeUI()
     {
-        Text = $"CNC-MES 스마트 현장 터미널 v1.3.7 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
+        Text = $"CNC-MES 스마트 현장 터미널 v1.3.8 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
         Size = new Size(1600, 960);
         MinimumSize = new Size(1280, 720);
         StartPosition = FormStartPosition.CenterScreen;
@@ -206,7 +206,7 @@ public class WorkflowMainForm : Form
         pnlBrand.Controls.Add(pnlIcon);
 
         var lblBrand = new Label { Text = "CNC-MES", Location = new Point(44, 9), Font = new Font("맑은 고딕", 12f, FontStyle.Bold), ForeColor = Color.White, AutoSize = true };
-        var lblVer = new Label { Text = "v1.3.7 [Workflow]", Location = new Point(136, 12), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
+        var lblVer = new Label { Text = "v1.3.8 [Workflow]", Location = new Point(136, 12), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
         var lblStatus = new Label { Text = "● 서버 정상", Location = new Point(245, 12), Font = new Font("맑은 고딕", 8f, FontStyle.Bold), ForeColor = Palette.Green, BackColor = Color.FromArgb(80, 6, 78, 59), AutoSize = true, Padding = new Padding(5, 1, 5, 1) };
         var lblSub = new Label { Text = "WORKFLOW-BASED OPERATOR CONTROL SYSTEM", Location = new Point(45, 31), Font = new Font("Consolas", 7.2f), ForeColor = Palette.TextSlate400, AutoSize = true };
         pnlBrand.Controls.AddRange(new Control[] { lblBrand, lblVer, lblStatus, lblSub });
@@ -280,14 +280,13 @@ public class WorkflowMainForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 3,
+            RowCount = 2,
             Margin = new Padding(0, 0, 6, 0),
             Padding = new Padding(0)
         };
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 175f)); // 2: Workflow Actions (6 buttons)
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 145f)); // 3: My Machines Cards
-        panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));  // 4: Orders & Multi-parts list
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 185f)); // 1: Workflow Actions (6 buttons)
+        panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));  // 2: Orders & Multi-parts list
 
         // Card 1: Workflow Menu Buttons (6 Action Buttons per spec)
         var cardMenu = CreateCard("📋 워크플로우 제어 메뉴");
@@ -298,28 +297,28 @@ public class WorkflowMainForm : Form
         menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 33.3f));
         menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 33.3f));
 
-        var btnGenDefault = CreateFlatButton("⚡ 기본 워크플로우 생성", Palette.Bg800, Palette.AccentSky);
-        btnGenDefault.Font = new Font("맑은 고딕", 7.8f, FontStyle.Bold);
+        var btnGenDefault = CreateFlatButton("⚡ 기본 워크플로우", Palette.Bg800, Palette.AccentSky);
+        btnGenDefault.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
         btnGenDefault.Click += (s, e) => GenerateStandardWorkflowForSelectedPart(confirmIfNotEmpty: true);
 
-        var btnSaveDraft = CreateFlatButton("💾 임시저장 (로컬초안)", Palette.Bg800, Color.FromArgb(52, 211, 153));
-        btnSaveDraft.Font = new Font("맑은 고딕", 7.8f, FontStyle.Bold);
+        var btnSaveDraft = CreateFlatButton("💾 임시저장", Palette.Bg800, Color.FromArgb(52, 211, 153));
+        btnSaveDraft.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
         btnSaveDraft.Click += (s, e) => SaveWorkflowDraftLocally();
 
-        var btnConfirmServer = CreateFlatButton("🌐 계획 확정·서버공유", Color.FromArgb(8, 47, 73), Palette.AccentSky);
-        btnConfirmServer.Font = new Font("맑은 고딕", 7.8f, FontStyle.Bold);
+        var btnConfirmServer = CreateFlatButton("🌐 계획 확정·공유", Color.FromArgb(8, 47, 73), Palette.AccentSky);
+        btnConfirmServer.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
         btnConfirmServer.Click += async (s, e) => await ConfirmAndShareWorkflowAsync();
 
-        var btnExecuteSelected = CreateFlatButton("▶ 선택 작업 실행", Color.FromArgb(5, 150, 105), Color.White);
-        btnExecuteSelected.Font = new Font("맑은 고딕", 7.8f, FontStyle.Bold);
+        var btnExecuteSelected = CreateFlatButton("▶ 선택작업 실행", Color.FromArgb(5, 150, 105), Color.White);
+        btnExecuteSelected.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
         btnExecuteSelected.Click += async (s, e) => await ExecuteSelectedWorkflowNodeAsync();
 
-        var btnAutoLayout = CreateFlatButton("⟲ 자동 배치", Palette.Bg800, Palette.Green);
-        btnAutoLayout.Font = new Font("맑은 고딕", 7.8f, FontStyle.Bold);
+        var btnAutoLayout = CreateFlatButton("⟲ 자동배치", Palette.Bg800, Palette.Green);
+        btnAutoLayout.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
         btnAutoLayout.Click += (s, e) => _canvas.AutoLayout();
 
         var btnClearPlan = CreateFlatButton("🗑 초기화", Palette.Bg800, Palette.Rose);
-        btnClearPlan.Font = new Font("맑은 고딕", 7.8f, FontStyle.Bold);
+        btnClearPlan.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
         btnClearPlan.Click += (s, e) =>
         {
             if (MessageBox.Show("현재 캔버스의 모든 노드를 초기화하시겠습니까?", "초기화 확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
@@ -338,13 +337,7 @@ public class WorkflowMainForm : Form
         cardMenu.Controls.Add(menuGrid);
         panel.Controls.Add(cardMenu, 0, 0);
 
-        // Card 2: My Machines Quick Cards
-        var cardMach = CreateCard("🎛 내 담당 장비 실시간 현황");
-        _pnlLeftMachineCards = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, WrapContents = false, FlowDirection = FlowDirection.TopDown };
-        cardMach.Controls.Add(_pnlLeftMachineCards);
-        panel.Controls.Add(cardMach, 0, 1);
-
-        // Card 3: Work Orders & Parts List (Real Server Data)
+        // Card 2: Work Orders & Parts List (Real Server Data)
         var cardOrders = CreateCard("📦 작업지시서 및 대상 부품 목록");
         var pnlOrderBody = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Margin = new Padding(0) };
         pnlOrderBody.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
@@ -360,20 +353,17 @@ public class WorkflowMainForm : Form
         _lstParts.SelectedIndexChanged += (s, e) => OnPartSelected();
         pnlOrderBody.Controls.Add(_lstParts, 0, 1);
 
-        var btnLoadToCanvas = CreateFlatButton("🎯 기본 워크플로우 생성", Palette.Green, Color.White);
-        btnLoadToCanvas.Font = new Font("맑은 고딕", 8.5f, FontStyle.Bold);
+        var btnLoadToCanvas = CreateFlatButton("⚡ 기본 워크플로우 생성", Palette.Green, Color.White);
+        btnLoadToCanvas.Font = new Font("맑은 고딕", 8.8f, FontStyle.Bold);
         btnLoadToCanvas.Click += (s, e) => GenerateStandardWorkflowForSelectedPart(confirmIfNotEmpty: true);
         pnlOrderBody.Controls.Add(btnLoadToCanvas, 0, 2);
 
         cardOrders.Controls.Add(pnlOrderBody);
-        panel.Controls.Add(cardOrders, 0, 2);
+        panel.Controls.Add(cardOrders, 0, 1);
 
         return panel;
     }
 
-    // =========================================================================
-    // 5 & 8. CENTER WORKSPACE: Workflow Canvas + Foldable Bottom History
-    // =========================================================================
     private Control BuildCenterWorkspace()
     {
         _centerVerticalSplitter = new SplitContainer
@@ -386,18 +376,30 @@ public class WorkflowMainForm : Form
             Margin = new Padding(0)
         };
 
-        // Top: Canvas & Palette Toolbar
-        var pnlCanvasContainer = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Bg900 };
+        // Top: Canvas & Palette Toolbar in TableLayoutPanel
+        var pnlCanvasContainer = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            Margin = new Padding(0),
+            Padding = new Padding(0),
+            BackColor = Palette.Bg900
+        };
+        pnlCanvasContainer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        pnlCanvasContainer.RowStyles.Add(new RowStyle(SizeType.Absolute, 36f)); // Toolbar
+        pnlCanvasContainer.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));  // Canvas
 
         // Canvas Toolbar (Top 36px)
         var canvasToolbar = new FlowLayoutPanel
         {
-            Dock = DockStyle.Top,
+            Dock = DockStyle.Fill,
             Height = 36,
             BackColor = Palette.Bg900,
             Padding = new Padding(8, 3, 8, 3),
             FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false
+            WrapContents = false,
+            Margin = new Padding(0)
         };
         canvasToolbar.Paint += (s, e) =>
         {
@@ -428,7 +430,7 @@ public class WorkflowMainForm : Form
         var btnZoomReset = CreateFlatButton("🔍 100%", Palette.Bg800, Palette.TextSlate300, 68, 28);
         btnZoomReset.Click += (s, e) => _canvas.ResetView();
 
-        var btnToggleBottom = CreateFlatButton("⤢ 하단 이력 접기/펼치기", Palette.Bg800, Palette.AccentSky, 140, 28);
+        var btnToggleBottom = CreateFlatButton("⤢ 하단 이력 접기/펼치기", Palette.Bg800, Palette.AccentSky, 150, 28);
         btnToggleBottom.Click += (s, e) =>
         {
             _centerVerticalSplitter.Panel2Collapsed = !_centerVerticalSplitter.Panel2Collapsed;
@@ -439,15 +441,15 @@ public class WorkflowMainForm : Form
             btnAddPrep, btnAddMach, btnAddInsp, btnAddCollab, btnAddPost, btnAddIssue,
             divTool, btnZoomReset, btnToggleBottom
         });
-        pnlCanvasContainer.Controls.Add(canvasToolbar);
 
         // Canvas Control
-        _canvas = new WorkflowCanvasControl { Dock = DockStyle.Fill };
+        _canvas = new WorkflowCanvasControl { Dock = DockStyle.Fill, Margin = new Padding(0) };
         _canvas.NodeSelected += (node) => _detailPanel.BindNode(node);
         _canvas.WorkflowChanged += UpdateWorkflowStats;
         _canvas.RequestGenerateDefaultWorkflow += () => GenerateStandardWorkflowForSelectedPart(confirmIfNotEmpty: true);
 
-        pnlCanvasContainer.Controls.Add(_canvas);
+        pnlCanvasContainer.Controls.Add(canvasToolbar, 0, 0);
+        pnlCanvasContainer.Controls.Add(_canvas, 0, 1);
         _centerVerticalSplitter.Panel1.Controls.Add(pnlCanvasContainer);
 
         // Bottom History Tabs
@@ -915,25 +917,27 @@ public class WorkflowMainForm : Form
         // 2. If no server steps, generate Standard CNC Template (Preparation -> Rough -> Inspection -> Finish -> Burr -> Wash -> Final)
         if (!hasServerSteps)
         {
-            var n1 = new WorkflowNode { OrderId = orderId, OrderNumber = orderNo, PartId = partId, PartName = partName, Title = "프로그램 작성 & 도면 확인", Category = NodeCategory.Preparation, Status = NodeStatus.Ready, MachineId = _currentMachineId, Assignee = _session.DisplayName, X = 40, Y = 100, Details = "CAD/CAM 도면 검토 및 NC프로그램 시뮬레이션 완료" };
-            var n2 = new WorkflowNode { OrderId = orderId, OrderNumber = orderNo, PartId = partId, PartName = partName, Title = "소재 준비 & 원점 세팅", Category = NodeCategory.Preparation, Status = NodeStatus.Ready, MachineId = _currentMachineId, Assignee = _session.DisplayName, X = 290, Y = 100, Details = "바이스 지그 장착 및 공작물 G54 좌표계 정밀 설정" };
-            var n3 = new WorkflowNode { OrderId = orderId, OrderNumber = orderNo, PartId = partId, PartName = partName, Title = "1차 전면 황삭 (면가공)", Category = NodeCategory.Machining, Status = NodeStatus.Ready, MachineId = _currentMachineId, Assignee = _session.DisplayName, X = 540, Y = 100, Details = "엔드밀 고속 황삭 포켓 가공 진행" };
-            var n4 = new WorkflowNode { OrderId = orderId, OrderNumber = orderNo, PartId = partId, PartName = partName, Title = "초물 치수 중간측정", Category = NodeCategory.Inspection, Status = NodeStatus.Ready, MachineId = _currentMachineId, Assignee = _session.DisplayName, X = 790, Y = 100, Details = "초품 두께 및 공차 치수 5.01mm 측정 합격" };
-            var n5 = new WorkflowNode { OrderId = orderId, OrderNumber = orderNo, PartId = partId, PartName = partName, Title = "2차 전면 정밀 정삭", Category = NodeCategory.Machining, Status = NodeStatus.Ready, MachineId = _currentMachineId, Assignee = _session.DisplayName, X = 1040, Y = 100, Details = "초경 엔드밀 고속 정삭 및 표면 조도 가공" };
-            
-            // Sub-worker task node
-            var nSub = new WorkflowNode { OrderId = orderId, OrderNumber = orderNo, PartId = partId, PartName = partName, Title = "서브인원 면취 & Burr 제거", Category = NodeCategory.Collaboration, Status = NodeStatus.Ready, MachineId = _currentMachineId, Assignee = "이서브", SubWorkerName = "이서브", SubWorkerInstruction = "외곽 R0.2 C면취 및 잔여 Burr 제거 지원", X = 790, Y = 260, Details = "바이스 분리 후 에어건 청소 및 면취 작업" };
+            var n1 = new WorkflowNode { OrderId = orderId, OrderNumber = orderNo, PartId = partId, PartName = partName, Title = "프로그램 작성 & 도면 확인", Category = NodeCategory.Preparation, Status = NodeStatus.Ready, MachineId = "R01", Assignee = _session.DisplayName, X = 40, Y = 100, Details = "CAD/CAM 도면 검토 및 NC프로그램 시뮬레이션 완료" };
+            var n2 = new WorkflowNode { OrderId = orderId, OrderNumber = orderNo, PartId = partId, PartName = partName, Title = "소재 준비 & 1차 원점 세팅", Category = NodeCategory.Preparation, Status = NodeStatus.Ready, MachineId = "R01", Assignee = _session.DisplayName, X = 280, Y = 100, Details = "바이스 지그 장착 및 공작물 G54 좌표계 정밀 설정" };
+            var n3 = new WorkflowNode { OrderId = orderId, OrderNumber = orderNo, PartId = partId, PartName = partName, Title = "1차 전면 황삭 (면가공)", Category = NodeCategory.Machining, Status = NodeStatus.Ready, MachineId = "R01", Assignee = _session.DisplayName, X = 520, Y = 100, Details = "엔드밀 고속 황삭 포켓 가공 진행" };
+            var n4 = new WorkflowNode { OrderId = orderId, OrderNumber = orderNo, PartId = partId, PartName = partName, Title = "초물 치수 중간측정", Category = NodeCategory.Inspection, Status = NodeStatus.Ready, MachineId = "측정실", Assignee = "품질팀", X = 760, Y = 100, Details = "초품 두께 및 공차 치수 5.01mm 측정 합격" };
+
+            // Sub-worker task node connecting R01 and R02
+            var nSub = new WorkflowNode { OrderId = orderId, OrderNumber = orderNo, PartId = partId, PartName = partName, Title = "서브인원 R01↔R02 소재이송/세팅", Category = NodeCategory.Collaboration, Status = NodeStatus.Ready, MachineId = "R02", Assignee = "이서브", SubWorkerName = "이서브", SubWorkerInstruction = "1차 가공품 R02로 이송 후 바이스 장착 및 2차 세팅 지원", X = 760, Y = 260, Details = "1차 가공품 바이스 분리 후 R02호기로 운반 및 배면 고정" };
+
+            // 2nd stage on R02
+            var n5 = new WorkflowNode { OrderId = orderId, OrderNumber = orderNo, PartId = partId, PartName = partName, Title = "2차 배면 정밀 정삭", Category = NodeCategory.Machining, Status = NodeStatus.Ready, MachineId = "R02", Assignee = _session.DisplayName, X = 1010, Y = 100, Details = "초경 엔드밀 고속 정삭 및 표면 조도 가공" };
 
             // Post process & Final Inspection
-            var n6 = new WorkflowNode { OrderId = orderId, OrderNumber = orderNo, PartId = partId, PartName = partName, Title = "초음파 세척 & 에어건 건조", Category = NodeCategory.PostProcess, Status = NodeStatus.Ready, MachineId = "세척기", Assignee = "세척실", X = 1290, Y = 100, Details = "절삭유 완벽 세척 후 보호비닐 포장" };
-            var n7 = new WorkflowNode { OrderId = orderId, OrderNumber = orderNo, PartId = partId, PartName = partName, Title = "최종 검사 및 포장/납품", Category = NodeCategory.Inspection, Status = NodeStatus.Ready, MachineId = "품질팀", Assignee = "검사실", X = 1540, Y = 100, Details = "3차원 측정기 최종 검사 및 납품 대기" };
+            var n6 = new WorkflowNode { OrderId = orderId, OrderNumber = orderNo, PartId = partId, PartName = partName, Title = "초음파 세척 & 에어건 건조", Category = NodeCategory.PostProcess, Status = NodeStatus.Ready, MachineId = "세척실", Assignee = "이서브", X = 1260, Y = 100, Details = "절삭유 완벽 세척 후 보호비닐 포장" };
+            var n7 = new WorkflowNode { OrderId = orderId, OrderNumber = orderNo, PartId = partId, PartName = partName, Title = "최종 검사 및 포장/납품", Category = NodeCategory.Inspection, Status = NodeStatus.Ready, MachineId = "품질팀", Assignee = "검사실", X = 1510, Y = 100, Details = "3차원 측정기 최종 검사 및 납품 대기" };
 
             _canvas.AddNode(n1);
             _canvas.AddNode(n2);
             _canvas.AddNode(n3);
             _canvas.AddNode(n4);
-            _canvas.AddNode(n5);
             _canvas.AddNode(nSub);
+            _canvas.AddNode(n5);
             _canvas.AddNode(n6);
             _canvas.AddNode(n7);
 
@@ -941,6 +945,7 @@ public class WorkflowMainForm : Form
             _canvas.AddEdge(n2.Id, n3.Id, EdgeType.Sequence);
             _canvas.AddEdge(n3.Id, n4.Id, EdgeType.Sequence);
             _canvas.AddEdge(n3.Id, nSub.Id, EdgeType.Delegation);
+            _canvas.AddEdge(nSub.Id, n5.Id, EdgeType.Sequence);
             _canvas.AddEdge(n4.Id, n5.Id, EdgeType.Sequence);
             _canvas.AddEdge(n5.Id, n6.Id, EdgeType.Sequence);
             _canvas.AddEdge(n6.Id, n7.Id, EdgeType.Sequence);
@@ -1193,13 +1198,13 @@ public class WorkflowMainForm : Form
             string serverStatus = newStatus switch
             {
                 NodeStatus.Running => "가공중",
-                NodeStatus.PendingCheck => "대기",
+                NodeStatus.PendingCheck => "가공중",
                 NodeStatus.Completed => "완료",
                 NodeStatus.Issue => "정지",
                 _ => "대기"
             };
 
-            // Call existing Server API: AddManualWorkLogAsync
+            // 1. Call existing Server API: AddManualWorkLogAsync
             await _api.AddManualWorkLogAsync(
                 node.MachineId,
                 node.OrderNumber,
@@ -1211,44 +1216,51 @@ public class WorkflowMainForm : Form
                 1
             );
 
-            // Update machine status if running
-            if (newStatus == NodeStatus.Running)
+            // 2. Update machine status on server
+            string statusPrompt = newStatus switch
             {
-                await _api.UpdateMachineStatusAsync(
-                    node.MachineId,
-                    "가공중",
-                    node.OrderNumber,
-                    node.PartName,
-                    node.Title,
-                    _session.DisplayName
-                );
-            }
+                NodeStatus.Running => $"[진행중] {node.Title}",
+                NodeStatus.Completed => $"[완료] {node.Title}",
+                NodeStatus.Issue => $"[이슈] {node.Title}",
+                _ => $"[대기] {node.Title}"
+            };
 
-            // If issue, register permanent defect record
+            await _api.UpdateMachineStatusAsync(
+                node.MachineId,
+                serverStatus,
+                node.OrderNumber,
+                node.PartName,
+                statusPrompt,
+                _session.DisplayName
+            );
+
+            // 3. If issue, register permanent defect record
             if (newStatus == NodeStatus.Issue)
             {
                 await _api.CreateDefectAndCountermeasureAsync(
                     $"{node.OrderNumber} / {node.PartName}",
                     node.MachineId,
                     "가공중",
-                    "치수불량",
-                    node.Title + " 이상 발생: " + node.Details,
-                    "엔드밀 마모 또는 Z축 옵셋 편차 점검",
-                    "Z축 보정 및 공구 신품 교체 조치 진행",
+                    "치수불량 / 현장점검요청",
+                    $"워크플로우 노드 [{node.Title}] 긴급 이슈 등록: {node.Details}",
+                    "기구 정밀점검 및 원점/공구옵셋 재측정",
+                    "장비 긴급 정지 후 담당자 확인 조치",
                     _session.DisplayName
                 );
             }
 
+            // Immediately refresh data
+            await LoadMachinesAsync();
             await LoadHistoryGridsAsync();
             UpdateWorkflowStats();
+            _canvas.Invalidate();
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"서버 작업 보고 중 오류: {ex.Message}", "서버 연동 알림", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            System.Diagnostics.Debug.WriteLine($"[NodeStatusChange Error] {ex.Message}");
         }
     }
 
-    // =========================================================================
     // HISTORY GRIDS, NOTICES, CHAT
     // =========================================================================
     private async Task LoadHistoryGridsAsync()
@@ -1337,6 +1349,15 @@ public class WorkflowMainForm : Form
         catch { }
     }
 
+    private (string channelType, string topicKey) GetCurrentChatTopic()
+    {
+        var sel = _cboChatChannel.SelectedItem?.ToString() ?? "";
+        if (sel.Contains("R01")) return ("MACHINE", "R01");
+        if (sel.Contains("R02")) return ("MACHINE", "R02");
+        if (sel.Contains("이슈") || sel.Contains("품질")) return ("GENERAL", "품질이슈");
+        return ("GENERAL", "공통");
+    }
+
     private async Task LoadNoticesAsync()
     {
         try
@@ -1350,11 +1371,17 @@ public class WorkflowMainForm : Form
                 {
                     string title = n.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "";
                     string date = n.TryGetProperty("createdAt", out var cd) ? cd.GetString() ?? "" : "";
+                    string acks = n.TryGetProperty("officialAcksJson", out var ak) ? ak.GetString() ?? "" : "";
+                    bool isAcked = acks.Contains(_session.Username) || acks.Contains(_session.DisplayName);
+
                     if (DateTime.TryParse(date, out var dt)) date = dt.ToString("MM-dd HH:mm");
-                    _lstNotices.Items.Add($"📢 {title} ({date})");
-                    unread++;
+                    string badge = isAcked ? "✔" : "🔔";
+                    if (!isAcked) unread++;
+
+                    _lstNotices.Items.Add($"{badge} {title} ({date})");
                 }
-                _lblNoticeBadge.Text = $"{unread}건 확인";
+                _lblNoticeBadge.Text = unread > 0 ? $"{unread}건 미확인" : "전원 확인완료";
+                _lblNoticeBadge.ForeColor = unread > 0 ? Palette.Amber : Palette.Green;
             }
         }
         catch { }
@@ -1362,22 +1389,131 @@ public class WorkflowMainForm : Form
 
     private async Task ShowNoticesDialogAsync()
     {
-        MessageBox.Show("공지사항 세부 목록을 확인합니다.", "공지사항 상세", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        var notices = await _api.GetNoticesAsync();
+
+        using var dlg = new Form
+        {
+            Text = "📢 현장 공지 및 긴급 지시사항 확인 (전자 서명)",
+            Size = new Size(820, 520),
+            StartPosition = FormStartPosition.CenterParent,
+            BackColor = Palette.Bg950,
+            ForeColor = Color.White,
+            Font = new Font("맑은 고딕", 9.5f)
+        };
+
+        var grid = new DataGridView
+        {
+            Dock = DockStyle.Fill,
+            BackgroundColor = Palette.Bg900,
+            BorderStyle = BorderStyle.None,
+            RowHeadersVisible = false,
+            AllowUserToAddRows = false,
+            ReadOnly = true,
+            SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+            AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+            EnableHeadersVisualStyles = false
+        };
+        grid.ColumnHeadersDefaultCellStyle.BackColor = Palette.Bg800;
+        grid.ColumnHeadersDefaultCellStyle.ForeColor = Palette.TextSlate300;
+        grid.ColumnHeadersDefaultCellStyle.Font = new Font("맑은 고딕", 9f, FontStyle.Bold);
+        grid.DefaultCellStyle.BackColor = Palette.Bg900;
+        grid.DefaultCellStyle.ForeColor = Palette.TextWhite;
+        grid.DefaultCellStyle.SelectionBackColor = Color.FromArgb(8, 47, 73);
+        grid.DefaultCellStyle.SelectionForeColor = Palette.AccentSky;
+
+        grid.Columns.Add("Id", "No");
+        grid.Columns["Id"]!.FillWeight = 35;
+        grid.Columns.Add("Priority", "중요도");
+        grid.Columns["Priority"]!.FillWeight = 50;
+        grid.Columns.Add("Title", "공지 제목");
+        grid.Columns["Title"]!.FillWeight = 120;
+        grid.Columns.Add("Content", "지시 내용");
+        grid.Columns["Content"]!.FillWeight = 180;
+        grid.Columns.Add("AuthorTime", "작성자 / 일시");
+        grid.Columns["AuthorTime"]!.FillWeight = 95;
+        grid.Columns.Add("MyAck", "내 확인 서명");
+        grid.Columns["MyAck"]!.FillWeight = 75;
+
+        void PopulateGrid(List<JsonElement> list)
+        {
+            grid.Rows.Clear();
+            foreach (var n in list)
+            {
+                int id = n.GetProperty("noticeId").GetInt32();
+                string pri = n.GetProperty("priority").GetString() ?? "일반";
+                string title = n.GetProperty("title").GetString() ?? "";
+                string content = n.GetProperty("content").GetString() ?? "";
+                string author = n.GetProperty("author").GetString() ?? "관리자";
+                string createdAt = n.GetProperty("createdAt").GetString() ?? "";
+                string acks = n.TryGetProperty("officialAcksJson", out var ak) ? ak.GetString() ?? "" : "";
+                bool isAcked = acks.Contains(_session.Username) || acks.Contains(_session.DisplayName);
+
+                int r = grid.Rows.Add(id, pri, title, content, $"{author} ({createdAt[..Math.Min(16, createdAt.Length)]})", isAcked ? "✔ 서명완료" : "❌ 미확인");
+                if (pri == "긴급")
+                {
+                    grid.Rows[r].Cells["Priority"].Style.ForeColor = Palette.Rose;
+                    grid.Rows[r].Cells["Priority"].Style.Font = new Font("맑은 고딕", 9f, FontStyle.Bold);
+                }
+                if (!isAcked)
+                {
+                    grid.Rows[r].Cells["MyAck"].Style.ForeColor = Palette.Amber;
+                    grid.Rows[r].Cells["MyAck"].Style.Font = new Font("맑은 고딕", 9f, FontStyle.Bold);
+                }
+                else
+                {
+                    grid.Rows[r].Cells["MyAck"].Style.ForeColor = Palette.Green;
+                }
+            }
+        }
+
+        PopulateGrid(notices);
+
+        var bottomBar = new Panel { Dock = DockStyle.Bottom, Height = 48, Padding = new Padding(10, 6, 10, 6), BackColor = Palette.Bg900 };
+        var btnAck = CreateFlatButton("✍ 선택 공지사항 확인 서명하기", Palette.Green, Color.White, 220, 34);
+        btnAck.Dock = DockStyle.Left;
+        btnAck.Font = new Font("맑은 고딕", 9f, FontStyle.Bold);
+
+        btnAck.Click += async (s, e) =>
+        {
+            if (grid.SelectedRows.Count == 0) return;
+            int nId = (int)grid.SelectedRows[0].Cells["Id"].Value;
+            bool ok = await _api.AcknowledgeNoticeAsync(nId, _session.Username);
+            if (ok)
+            {
+                MessageBox.Show("공지사항 확인 서명이 서버에 정상 기록되었습니다.", "확인 완료", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                var refreshed = await _api.GetNoticesAsync();
+                PopulateGrid(refreshed);
+                await LoadNoticesAsync();
+            }
+        };
+
+        var btnClose = CreateFlatButton("닫기", Palette.Bg800, Palette.TextSlate300, 90, 34);
+        btnClose.Dock = DockStyle.Right;
+        btnClose.Click += (s, e) => dlg.Close();
+
+        bottomBar.Controls.AddRange(new Control[] { btnAck, btnClose });
+        dlg.Controls.Add(grid);
+        dlg.Controls.Add(bottomBar);
+
+        dlg.ShowDialog(this);
     }
 
     private async Task LoadChatAsync()
     {
         try
         {
-            var list = await _api.GetChatMessagesAsync("GENERAL");
+            var (cType, tKey) = GetCurrentChatTopic();
+            var list = await _api.GetChatMessagesByChannelAsync(cType, tKey);
             if (list != null)
             {
                 _lstChat.Items.Clear();
                 foreach (var msg in list)
                 {
-                    string sender = msg.TryGetProperty("senderName", out var s) ? s.GetString() ?? "" : "시스템";
-                    string content = msg.TryGetProperty("message", out var m) ? m.GetString() ?? "" : "";
-                    _lstChat.Items.Add($"[{sender}] {content}");
+                    string author = msg.TryGetProperty("author", out var s) ? s.GetString() ?? "" : "시스템";
+                    string content = msg.TryGetProperty("content", out var m) ? m.GetString() ?? "" : "";
+                    string createdAt = msg.TryGetProperty("createdAt", out var cd) ? cd.GetString() ?? "" : "";
+                    if (DateTime.TryParse(createdAt, out var dt)) createdAt = dt.ToString("HH:mm");
+                    _lstChat.Items.Add($"[{author}] {content} ({createdAt})");
                 }
                 if (_lstChat.Items.Count > 0)
                 {
@@ -1395,13 +1531,13 @@ public class WorkflowMainForm : Form
         _txtChatInput.Clear();
         try
         {
-            await _api.SendChatMessageAsync("GENERAL", _session.DisplayName, text);
+            var (cType, tKey) = GetCurrentChatTopic();
+            await _api.SendChatMessageAsync(tKey, _session.DisplayName, text, cType);
             await LoadChatAsync();
         }
         catch { }
     }
 
-    // =========================================================================
     // VIEW SWITCHER (Seamless Recovery & Toggle between Workflow & Classic UI)
     // =========================================================================
     private void SwitchToClassicView()

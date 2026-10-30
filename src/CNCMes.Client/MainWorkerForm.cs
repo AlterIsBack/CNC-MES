@@ -1360,16 +1360,15 @@ public class MainWorkerForm : Form
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32f));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
-        var topRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1, Margin = new Padding(0) };
+        var topRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, Margin = new Padding(0) };
         topRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        topRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         topRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         topRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
         var headerFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
         _lblHistoryHeader = new Label
         {
-            Text = "🕒 장비 최근 작업 이력",
+            Text = "⚡ 실시간 설비별 가공 현황",
             Font = new Font("맑은 고딕", 9.8f, FontStyle.Bold),
             ForeColor = Color.White,
             AutoSize = true,
@@ -1377,7 +1376,7 @@ public class MainWorkerForm : Form
         };
         var lblHistNote = new Label
         {
-            Text = " (더블클릭 시 수정)",
+            Text = " (현재 작지번호 및 진행상황)",
             Font = new Font("맑은 고딕", 8.2f),
             ForeColor = CncTheme.TextSlate400,
             AutoSize = true,
@@ -1387,13 +1386,9 @@ public class MainWorkerForm : Form
         headerFlow.Controls.Add(_lblHistoryHeader);
         headerFlow.Controls.Add(lblHistNote);
 
-        var btnEditHistory = CreateFlatButton("✏️ 선택 이력 수정", Color.FromArgb(3, 105, 161), Color.White, 120, 26);
-        btnEditHistory.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
-        btnEditHistory.Click += async (s, e) => await EditSelectedWorkHistoryAsync();
-
-        var btnDeleteHistory = CreateFlatButton("🗑️ 오클릭 삭제", Color.FromArgb(159, 18, 57), Color.White, 105, 26);
-        btnDeleteHistory.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
-        btnDeleteHistory.Click += async (s, e) => await DeleteSelectedWorkHistoryAsync();
+        var btnRefreshHistory = CreateFlatButton("⟳ 새로고침", Color.FromArgb(3, 105, 161), Color.White, 85, 26);
+        btnRefreshHistory.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
+        btnRefreshHistory.Click += async (s, e) => { await LoadMachinesAsync(); await LoadWorkHistoryGridAsync(); };
 
         _chkHistoryFilterMyMachines = new CheckBox
         {
@@ -1409,37 +1404,46 @@ public class MainWorkerForm : Form
         _chkHistoryFilterMyMachines.CheckedChanged += async (s, e) => await LoadWorkHistoryGridAsync();
 
         topRow.Controls.Add(headerFlow, 0, 0);
-        topRow.Controls.Add(btnEditHistory, 1, 0);
-        topRow.Controls.Add(btnDeleteHistory, 2, 0);
-        topRow.Controls.Add(_chkHistoryFilterMyMachines, 3, 0);
+        topRow.Controls.Add(btnRefreshHistory, 1, 0);
+        topRow.Controls.Add(_chkHistoryFilterMyMachines, 2, 0);
         layout.Controls.Add(topRow, 0, 0);
 
         _gridHistory = CreateModernGrid();
-        _gridHistory.Columns.Add("Id", "ID");
-        _gridHistory.Columns.Add("LoggedAt", "시각");
         _gridHistory.Columns.Add("MachineId", "장비");
-        _gridHistory.Columns.Add("OrderNumber", "작지번호");
-        _gridHistory.Columns.Add("PartName", "품목(품명)");
-        _gridHistory.Columns.Add("WorkDetail", "세부 작업내용");
-        _gridHistory.Columns.Add("WorkerName", "작업자");
         _gridHistory.Columns.Add("Status", "상태");
+        _gridHistory.Columns.Add("OrderNumber", "작지번호");
+        _gridHistory.Columns.Add("PartName", "가공품목");
+        _gridHistory.Columns.Add("WorkDetail", "현재 진행상황 / 세부공정");
+        _gridHistory.Columns.Add("WorkerName", "담당자");
+        _gridHistory.Columns.Add("RpmFeed", "회전/이송");
+        _gridHistory.Columns.Add("RunTime", "가동시간");
 
-        _gridHistory.Columns["Id"].Visible = false;
-        _gridHistory.Columns["LoggedAt"].Width = 85;
-        _gridHistory.Columns["MachineId"].Width = 45;
+        _gridHistory.Columns["MachineId"].Width = 55;
         _gridHistory.Columns["MachineId"].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
-        _gridHistory.Columns["OrderNumber"].Width = 110;
-        _gridHistory.Columns["PartName"].Width = 125;
-        _gridHistory.Columns["WorkDetail"].Width = 120;
-        _gridHistory.Columns["WorkerName"].Width = 55;
-        _gridHistory.Columns["WorkerName"].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
-        _gridHistory.Columns["Status"].Width = 65;
+        _gridHistory.Columns["Status"].Width = 70;
         _gridHistory.Columns["Status"].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
+        _gridHistory.Columns["OrderNumber"].Width = 125;
+        _gridHistory.Columns["PartName"].Width = 135;
+        _gridHistory.Columns["WorkDetail"].Width = 160;
+        _gridHistory.Columns["WorkerName"].Width = 65;
+        _gridHistory.Columns["WorkerName"].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
+        _gridHistory.Columns["RpmFeed"].Width = 85;
+        _gridHistory.Columns["RpmFeed"].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
+        _gridHistory.Columns["RunTime"].Width = 65;
+        _gridHistory.Columns["RunTime"].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
 
-        // Double-click row to edit
-        _gridHistory.CellDoubleClick += async (s, e) =>
+        // Double-click row to select machine
+        _gridHistory.CellDoubleClick += (s, e) =>
         {
-            if (e.RowIndex >= 0) await EditSelectedWorkHistoryAsync();
+            if (e.RowIndex >= 0 && e.RowIndex < _gridHistory.Rows.Count)
+            {
+                var mid = _gridHistory.Rows[e.RowIndex].Cells["MachineId"].Value?.ToString();
+                if (!string.IsNullOrEmpty(mid))
+                {
+                    _currentMachineId = mid;
+                    UpdateHeaderMachineSummary();
+                }
+            }
         };
 
         layout.Controls.Add(_gridHistory, 0, 1);
@@ -2302,55 +2306,59 @@ public class MainWorkerForm : Form
     {
         try
         {
-            var logs = await _api.GetMachineWorkLogsAsync(null, 80);
-            _cachedHistoryLogs = logs;
+            if (_allMachines.Count == 0)
+            {
+                _allMachines = await _api.GetMachinesAsync();
+            }
+
             _gridHistory.Rows.Clear();
 
-            foreach (var l in logs)
+            foreach (var m in _allMachines)
             {
-                int logId = l.TryGetProperty("id", out var idProp) ? idProp.GetInt32() : 0;
-                var mid = l.GetProperty("machineId").GetString() ?? "";
+                string mid = m.TryGetProperty("machineId", out var midEl) ? midEl.GetString() ?? "" : "";
                 if (_chkHistoryFilterMyMachines.Checked && !_mySelectedMachines.Contains(mid))
                     continue;
 
-                var ord = l.GetProperty("orderNumber").GetString() ?? "-";
-                var prt = l.GetProperty("partName").GetString() ?? "-";
-                var dtl = l.GetProperty("workDetail").GetString() ?? "-";
-                var st = l.GetProperty("status").GetString() ?? "-";
-                var wkr = l.GetProperty("workerName").GetString() ?? "-";
-                var sub = l.TryGetProperty("subWorkerName", out var sw) && sw.ValueKind == JsonValueKind.String ? sw.GetString() : null;
-                var time = l.GetProperty("createdAt").GetString() ?? "";
-                var shortTime = time.Length >= 16 ? time.Substring(5, 11) : time;
+                string st = m.TryGetProperty("status", out var sEl) ? sEl.GetString() ?? "대기" : "대기";
+                string ord = m.TryGetProperty("activeJobNumber", out var oEl) ? oEl.GetString() ?? "-" : "-";
+                string prt = m.TryGetProperty("activePartName", out var pEl) ? pEl.GetString() ?? "-" : "-";
+                string prog = m.TryGetProperty("currentProgram", out var prgEl) ? prgEl.GetString() ?? "-" : "-";
+                string worker = m.TryGetProperty("activeWorker", out var wEl) ? wEl.GetString() ?? "-" : "-";
+                int rpm = m.TryGetProperty("spindleRpm", out var rpmEl) ? rpmEl.GetInt32() : 0;
+                double feed = m.TryGetProperty("feedRate", out var fEl) ? fEl.GetDouble() : 0;
+                double runMin = m.TryGetProperty("runTimeMinutes", out var rEl) ? rEl.GetDouble() : 0;
 
-                var workerDisplay = string.IsNullOrEmpty(sub) ? wkr : $"{wkr}(서브:{sub})";
-                int rIdx = _gridHistory.Rows.Add(logId, shortTime, mid, ord, prt, dtl, workerDisplay, st);
+                string rpmFeed = (rpm > 0 || feed > 0) ? $"{rpm}rpm/{feed:F0}" : "-";
+                string runTime = runMin > 0 ? $"{runMin:F0}분" : "-";
+
+                int rIdx = _gridHistory.Rows.Add(mid, st, ord, prt, prog, worker, rpmFeed, runTime);
                 var row = _gridHistory.Rows[rIdx];
+
                 row.Cells["MachineId"].Style.ForeColor = CncTheme.AccentSky;
                 row.Cells["MachineId"].Style.Font = new Font("Consolas", 8.8f, FontStyle.Bold);
                 row.Cells["WorkDetail"].Style.ForeColor = Color.FromArgb(252, 211, 77);
                 row.Cells["WorkDetail"].Style.Font = new Font("맑은 고딕", 8.8f, FontStyle.Bold);
+
                 if (st.Contains("가공"))
                 {
                     row.Cells["Status"].Style.ForeColor = CncTheme.Green;
-                    row.Cells["Status"].Style.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
+                    row.Cells["Status"].Style.Font = new Font("맑은 고딕", 8.5f, FontStyle.Bold);
                 }
                 else if (st.Contains("대기"))
                 {
                     row.Cells["Status"].Style.ForeColor = CncTheme.Amber;
-                    row.Cells["Status"].Style.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
+                    row.Cells["Status"].Style.Font = new Font("맑은 고딕", 8.5f, FontStyle.Bold);
                 }
                 else
                 {
-                    row.Cells["Status"].Style.ForeColor = CncTheme.TextSlate400;
+                    row.Cells["Status"].Style.ForeColor = CncTheme.Rose;
+                    row.Cells["Status"].Style.Font = new Font("맑은 고딕", 8.5f, FontStyle.Bold);
                 }
             }
         }
         catch { }
     }
 
-    // =========================================================================
-    // 장비 최근 작업 이력 오클릭 수정 및 삭제 (서버 로그 자동 기록)
-    // =========================================================================
     private async Task EditSelectedWorkHistoryAsync()
     {
         if (_gridHistory.SelectedRows.Count == 0)
