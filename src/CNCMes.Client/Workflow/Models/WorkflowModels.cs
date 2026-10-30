@@ -14,7 +14,7 @@ public enum NodeCategory
 
 public enum NodeStatus
 {
-    Ready,         // 대기 / 준비
+    Ready,         // 대기 / 예정 / 미착수
     Running,       // 진행중 / 가공중
     PendingCheck,  // 측정 / 검사대기
     Completed,     // 완료
@@ -36,16 +36,24 @@ public class WorkflowNode
     public NodeCategory Category { get; set; } = NodeCategory.Machining;
     public NodeStatus Status { get; set; } = NodeStatus.Ready;
     
+    public int OrderId { get; set; }
     public string OrderNumber { get; set; } = "";
+    public int PartId { get; set; }
     public string PartName { get; set; } = "";
     public string MachineId { get; set; } = "R01";
     public string Assignee { get; set; } = "";
     public string Details { get; set; } = "";
+    public string NextProcess { get; set; } = "";
+
+    // Sub-Worker Dedicated Fields
+    public string SubWorkerName { get; set; } = "";
+    public string SubWorkerInstruction { get; set; } = "";
+    public bool IsSubWorkerTaskSent { get; set; } = false;
     
     public float X { get; set; }
     public float Y { get; set; }
-    public float Width { get; set; } = 190f;
-    public float Height { get; set; } = 78f;
+    public float Width { get; set; } = 195f;
+    public float Height { get; set; } = 80f;
 
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
@@ -66,12 +74,19 @@ public class WorkflowEdge
     public string FromNodeId { get; set; } = "";
     public string ToNodeId { get; set; } = "";
     public EdgeType Type { get; set; } = EdgeType.Sequence;
+    public string Label { get; set; } = "";
 }
 
 public class WorkflowData
 {
+    public int OrderId { get; set; }
     public string OrderNumber { get; set; } = "";
+    public int PartId { get; set; }
     public string PartName { get; set; } = "";
     public List<WorkflowNode> Nodes { get; set; } = new();
     public List<WorkflowEdge> Edges { get; set; } = new();
+    
+    public DateTime LastSavedAt { get; set; } = DateTime.Now;
+    public bool IsConfirmed { get; set; } = false;
+    public string ConfirmedBy { get; set; } = "";
 }
