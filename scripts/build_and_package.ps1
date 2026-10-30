@@ -1,6 +1,6 @@
 ﻿﻿# CNC-MES Automated Build, Versioning and Deployment Packaging Script
 param(
-    [string]$Version = "1.3.9"
+    [string]$Version = "1.4.0"
 )
 
 $ErrorActionPreference = "Stop"

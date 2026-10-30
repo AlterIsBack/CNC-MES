@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 using CNCMes.Client.Workflow.Models;
@@ -23,13 +24,64 @@ public class NodeDetailPanel : UserControl
         public static readonly Color FocusBorder = Color.FromArgb(56, 189, 248);
     }
 
+    private static readonly Dictionary<NodeCategory, string[]> ClassicProcessPresets = new()
+    {
+        [NodeCategory.Machining] = new[]
+        {
+            "1차 전면 황삭 가공 진행",
+            "1차 전면 중삭/정삭 가공 진행",
+            "2차 후면(반전) 황삭 가공 진행",
+            "2차 후면(반전) 정삭 가공 진행",
+            "포켓 및 내경 윤곽 밀링 가공",
+            "마이크로 홀 드릴링 정밀 가공",
+            "챔퍼(면취) 및 버(Burr) 제거 가공",
+            "고속 정밀 피니싱 가공 진행"
+        },
+        [NodeCategory.Preparation] = new[]
+        {
+            "소재 장착 및 바이스/치구 세팅",
+            "G54 공작물 원점(X/Y/Z) 세팅",
+            "도면/공정도 및 NC 프로그램 검증",
+            "공구 장착 및 공구길이(H) 세팅",
+            "초품(첫물) 시가공 및 세팅 확인"
+        },
+        [NodeCategory.Inspection] = new[]
+        {
+            "초물 치수 중간측정 검사",
+            "1차 가공 후 버니어/마이크로 측정",
+            "정삭 후 포켓 깊이/두께 측정",
+            "외경/전장 주요 공차 적합성 확인",
+            "최종 가공완료 후 출하 전 치수 확인"
+        },
+        [NodeCategory.PostProcess] = new[]
+        {
+            "초음파 세척 및 에어건 건조",
+            "레이저 마킹 및 핀 압입 조립",
+            "표면 아노다이징 및 후처리 의뢰",
+            "최종 방청 포장 및 납품 대기"
+        },
+        [NodeCategory.Collaboration] = new[]
+        {
+            "서브인원 소재이송 및 2차세팅 지원",
+            "서브인원 면취 및 버(Burr) 제거 위임",
+            "가공 완료품 세척실 운반 및 인계"
+        },
+        [NodeCategory.Issue] = new[]
+        {
+            "공구 마모 및 치수 불량 점검",
+            "장비 알람 발생 및 긴급 점검",
+            "원점 틀어짐 확인 및 재설정",
+            "소재 불량 및 설계변경 확인"
+        }
+    };
+
     private WorkflowNode? _currentNode;
     private bool _isBinding;
 
     // Controls
     private Label _lblOrderAndPart = null!;
     private Label _lblCurrentStatus = null!;
-    private TextBox _txtTitle = null!;
+    private ComboBox _cboTitle = null!;
     private ComboBox _cboCategory = null!;
     private ComboBox _cboMachine = null!;
     private TextBox _txtAssignee = null!;
@@ -122,22 +174,42 @@ public class NodeDetailPanel : UserControl
         };
         mainLayout.Controls.Add(_lblOrderAndPart, 0, 1);
 
-        // 2: Title & Category
+        // 2: Title (DropDown with Classic Presets) & Category
         var row2 = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = new Padding(0) };
         row2.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 65f));
         row2.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 35f));
 
         var pnlTitle = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, Margin = new Padding(0) };
-        pnlTitle.Controls.Add(new Label { Text = "공정명 (타이틀)", Font = new Font("맑은 고딕", 7.8f, FontStyle.Bold), ForeColor = Palette.TextSlate400, AutoSize = true });
-        _txtTitle = new TextBox { Width = 205, BackColor = Palette.Bg850, ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle, Font = new Font("맑은 고딕", 9.2f) };
-        _txtTitle.TextChanged += (s, e) => SaveChangesToNode();
-        pnlTitle.Controls.Add(_txtTitle);
+        pnlTitle.Controls.Add(new Label { Text = "공정명 (클래식 선택 / 직접 입력)", Font = new Font("맑은 고딕", 7.8f, FontStyle.Bold), ForeColor = Palette.TextSlate400, AutoSize = true });
+        
+        // Editable Dropdown for Process Title (Classic Presets + Custom input)
+        _cboTitle = new ComboBox
+        {
+            Width = 205,
+            DropDownStyle = ComboBoxStyle.DropDown,
+            BackColor = Palette.Bg850,
+            ForeColor = Color.White,
+            Font = new Font("맑은 고딕", 9.2f),
+            AutoCompleteMode = AutoCompleteMode.SuggestAppend,
+            AutoCompleteSource = AutoCompleteSource.ListItems
+        };
+        _cboTitle.TextChanged += (s, e) => SaveChangesToNode();
+        _cboTitle.SelectedIndexChanged += (s, e) => SaveChangesToNode();
+        pnlTitle.Controls.Add(_cboTitle);
 
         var pnlCat = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, Margin = new Padding(0) };
         pnlCat.Controls.Add(new Label { Text = "공정분류", Font = new Font("맑은 고딕", 7.8f, FontStyle.Bold), ForeColor = Palette.TextSlate400, AutoSize = true });
         _cboCategory = new ComboBox { Width = 115, DropDownStyle = ComboBoxStyle.DropDownList, BackColor = Palette.Bg850, ForeColor = Color.White };
         _cboCategory.Items.AddRange(new object[] { "준비", "가공", "검사", "후공정", "협업", "이슈" });
-        _cboCategory.SelectedIndexChanged += (s, e) => SaveChangesToNode();
+        _cboCategory.SelectedIndexChanged += (s, e) =>
+        {
+            if (!_isBinding && _cboCategory.SelectedIndex >= 0)
+            {
+                var cat = (NodeCategory)_cboCategory.SelectedIndex;
+                PopulateTitlePresets(cat, _cboTitle.Text);
+                SaveChangesToNode();
+            }
+        };
         pnlCat.Controls.Add(_cboCategory);
 
         row2.Controls.Add(pnlTitle, 0, 0);
@@ -326,6 +398,30 @@ public class NodeDetailPanel : UserControl
         SetEmptyState();
     }
 
+    private void PopulateTitlePresets(NodeCategory category, string? preserveText = null)
+    {
+        string currentText = preserveText ?? _cboTitle.Text;
+        _cboTitle.Items.Clear();
+
+        if (ClassicProcessPresets.TryGetValue(category, out var presets))
+        {
+            _cboTitle.Items.AddRange(presets);
+        }
+        else if (ClassicProcessPresets.TryGetValue(NodeCategory.Machining, out var machPresets))
+        {
+            _cboTitle.Items.AddRange(machPresets);
+        }
+
+        if (!string.IsNullOrEmpty(currentText))
+        {
+            _cboTitle.Text = currentText;
+        }
+        else if (_cboTitle.Items.Count > 0)
+        {
+            _cboTitle.SelectedIndex = 0;
+        }
+    }
+
     public void BindNode(WorkflowNode? node)
     {
         _currentNode = node;
@@ -342,8 +438,9 @@ public class NodeDetailPanel : UserControl
             _lblCurrentStatus.Text = $"[{GetStatusText(node.Status)}]";
             _lblCurrentStatus.ForeColor = GetStatusColor(node.Status);
 
-            _txtTitle.Text = node.Title;
             _cboCategory.SelectedIndex = Math.Clamp((int)node.Category, 0, 5);
+            PopulateTitlePresets(node.Category, node.Title);
+            _cboTitle.Text = node.Title;
 
             int machIdx = _cboMachine.Items.IndexOf(node.MachineId);
             if (machIdx >= 0) _cboMachine.SelectedIndex = machIdx;
@@ -400,7 +497,7 @@ public class NodeDetailPanel : UserControl
     {
         if (_isBinding || _currentNode == null) return;
 
-        _currentNode.Title = _txtTitle.Text.Trim();
+        _currentNode.Title = _cboTitle.Text.Trim();
         _currentNode.Category = (NodeCategory)_cboCategory.SelectedIndex;
         _currentNode.MachineId = _cboMachine.SelectedItem?.ToString() ?? "R01";
         _currentNode.Assignee = _txtAssignee.Text.Trim();
@@ -481,8 +578,10 @@ public class NodeDetailPanel : UserControl
             _lblCurrentStatus.Text = "[대기]";
             _lblCurrentStatus.ForeColor = Palette.TextSlate400;
 
-            _txtTitle.Text = "";
+            _cboTitle.Text = "";
             _cboCategory.SelectedIndex = 1;
+            PopulateTitlePresets(NodeCategory.Machining, "");
+
             _cboMachine.SelectedIndex = 0;
             _txtAssignee.Text = "";
             _txtDetails.Text = "";
