@@ -27,16 +27,19 @@ public static class TestScreenCapture
         form.Location = new Point(0, 0);
 
         form.Show();
-        for (int i = 0; i < 10; i++)
+        for (int i = 0; i < 15; i++)
         {
             Application.DoEvents();
             System.Threading.Thread.Sleep(50);
         }
 
-        // Simulate user clicking "기본 워크플로우 생성"
+        // Simulate user clicking "기본 워크플로우 생성" twice:
+        // 1st Lane: R01 primary workflow
+        form.GenerateStandardWorkflowForSelectedPart(confirmIfNotEmpty: false);
+        // 2nd Lane: R02 parallel multi-machine workflow
         form.GenerateStandardWorkflowForSelectedPart(confirmIfNotEmpty: false);
 
-        for (int i = 0; i < 10; i++)
+        for (int i = 0; i < 15; i++)
         {
             Application.DoEvents();
             System.Threading.Thread.Sleep(50);
