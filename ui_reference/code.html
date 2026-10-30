@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+
+<html lang="ko"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>CNC-MES 생산관리 관제 시스템 v1.3.3</title>
+<!-- FontAwesome & Pretendard Font -->
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet"/>
+<!-- Tailwind CSS CDN with Plugins -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Pretendard', '-apple-system', 'BlinkMacSystemFont', 'system-ui', 'Roboto', 'sans-serif'],
+            mono: ['JetBrains Mono', 'Consolas', 'Courier New', 'monospace']
+          },
+          colors: {
+            cnc: {
+              950: '#070b14',
+              900: '#0b1323',
+              850: '#0f1b31',
+              800: '#142340',
+              700: '#1e345e',
+              600: '#2b477d',
+              border: '#1d2e4e',
+              borderLight: '#2a436f',
+              accent: '#0ea5e9',
+              green: '#10b981',
+              amber: '#f59e0b',
+              red: '#ef4444'
+            }
+          }
+        }
+      }
+    }
+  </script>
+<!-- Custom Scrollbar & Micro-interactions Style -->
+<style data-purpose="custom-scrollbar-and-effects">
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #090e1a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1e3152;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #2b4573;
+    }
+    
+    .pulse-status {
+      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+      animation: pulse-green 2s infinite;
+    }
+    @keyframes pulse-green {
+      0% {
+        transform: scale(0.98);
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+      }
+      70% {
+        transform: scale(1);
+        box-shadow: 0 0 0 8px rgba(16, 185, 129, 0);
+      }
+      100% {
+        transform: scale(0.98);
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+      }
+    }
+    .glow-red {
+      box-shadow: 0 0 15px rgba(239, 68, 68, 0.35);
+    }
+  </style>
+</head>
+<body class="bg-cnc-950 text-slate-200 font-sans antialiased min-h-screen select-none flex flex-col overflow-hidden">
+<!-- BEGIN: GlobalHeader -->
+<header class="h-14 bg-cnc-900 border-b border-cnc-border px-4 flex items-center justify-between z-30 shrink-0 shadow-lg" data-purpose="global-navigation-bar">
+<!-- Brand / Title / Network Status -->
+<div class="flex items-center space-x-4">
+<div class="flex items-center space-x-2.5">
+<span class="flex h-9 w-9 rounded-lg bg-sky-600/20 text-sky-400 items-center justify-center border border-sky-500/30 font-bold text-lg shadow-inner">
+<i class="fa-solid fa-microchip"></i>
+</span>
+<div>
+<div class="flex items-center space-x-2">
+<h1 class="text-base font-extrabold tracking-wide text-white uppercase flex items-center gap-1.5">
+              CNC-MES <span class="text-sky-400 text-xs px-1.5 py-0.5 rounded bg-sky-950/80 border border-sky-500/30">v1.3.3</span>
+</h1>
+<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-950/80 text-emerald-400 border border-emerald-600/30">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5 animate-pulse"></span> 서버 정상
+            </span>
+</div>
+<p class="text-[10px] text-slate-400 font-mono tracking-wider">SMART FACTORY OPERATION CONTROL SYSTEM</p>
+</div>
+</div>
+</div>
+<!-- Active Machine Quick Info (Center) -->
+<div class="hidden lg:flex items-center bg-cnc-850 px-4 py-1.5 rounded-lg border border-cnc-borderLight shadow-inner space-x-4">
+<div class="flex items-center space-x-2">
+<span class="text-xs text-slate-400 font-medium">현재 조작 장비:</span>
+<span class="text-sm font-bold text-emerald-400 bg-emerald-950/90 px-2.5 py-0.5 rounded border border-emerald-500/40 tracking-wider flex items-center gap-1">
+<i class="fa-solid fa-gear fa-spin text-xs"></i> [R01]
+        </span>
+</div>
+<div class="h-4 w-px bg-cnc-border"></div>
+<label class="flex items-center space-x-2 cursor-pointer group">
+<input checked="" class="rounded border-slate-600 text-sky-500 focus:ring-0 focus:ring-offset-0 bg-cnc-900 w-3.5 h-3.5" type="checkbox"/>
+<span class="text-xs text-slate-300 group-hover:text-white transition">내 담당 장비(2대): <strong class="text-sky-400">R01, R02</strong></span>
+</label>
+<div class="h-4 w-px bg-cnc-border"></div>
+<div class="text-[11px] text-slate-400 font-mono flex items-center gap-1">
+<i class="fa-regular fa-clock text-slate-500"></i>
+<span id="live-clock">2026-03-31 13:19:42</span>
+</div>
+</div>
+<!-- Right Header Actions / User Status -->
+<div class="flex items-center space-x-2.5">
+<button class="px-3 py-1.5 bg-cnc-800 hover:bg-cnc-700 text-xs font-semibold text-slate-300 rounded border border-cnc-borderLight transition flex items-center space-x-1.5" type="button">
+<i class="fa-solid fa-bullhorn text-amber-400 text-xs"></i>
+<span>공지사항</span>
+<span class="bg-cnc-700 text-[10px] text-slate-300 px-1.5 py-0.2 rounded-full">0건</span>
+</button>
+<button class="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold rounded shadow-md border border-sky-400/30 transition flex items-center space-x-1.5" type="button">
+<i class="fa-solid fa-file-lines text-xs"></i>
+<span>작업지시서 목록 열람</span>
+</button>
+<div class="flex items-center bg-cnc-800 border border-cnc-border px-2.5 py-1 rounded text-xs">
+<div class="w-6 h-6 rounded bg-sky-500/20 text-sky-400 flex items-center justify-center font-bold text-xs mr-2 border border-sky-500/30">
+          a
+        </div>
+<span class="font-medium text-slate-200">작업자 [a]</span>
+</div>
+<button class="p-2 bg-cnc-800 hover:bg-cnc-700 text-slate-300 hover:text-white rounded border border-cnc-borderLight text-xs transition" title="새로고침" type="button">
+<i class="fa-solid fa-arrows-rotate"></i>
+</button>
+</div>
+</header>
+<!-- END: GlobalHeader -->
+<!-- BEGIN: MachineSelectorStrip -->
+<section class="bg-cnc-900/90 border-b border-cnc-border px-4 py-2 shrink-0 backdrop-blur-sm" data-purpose="machine-quick-switch-bar">
+<div class="flex items-center justify-between mb-1.5">
+<div class="flex items-center space-x-2">
+<i class="fa-solid fa-network-wired text-sky-400 text-xs"></i>
+<span class="text-xs font-bold text-slate-300">다중 장비 선택 바</span>
+<span class="text-[11px] text-slate-400">— [ <i class="fa-solid fa-square-check text-sky-400 text-[10px]"></i> 내 담당]을 체크해 여러 대의 장비를 동시에 관리하고, 카드를 클릭해 조작 장비를 전환하십시오.</span>
+</div>
+<div class="text-[11px] text-slate-400 flex items-center space-x-3">
+<span class="inline-flex items-center"><span class="w-2 h-2 rounded-full bg-emerald-400 mr-1.5"></span>가공중 (1)</span>
+<span class="inline-flex items-center"><span class="w-2 h-2 rounded-full bg-amber-400 mr-1.5"></span>대기 (6)</span>
+<span class="inline-flex items-center"><span class="w-2 h-2 rounded-full bg-rose-500 mr-1.5"></span>정지 (0)</span>
+</div>
+</div>
+<!-- Machine List Cards Grid -->
+<div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
+<!-- Machine K01 -->
+<div class="bg-cnc-850 border border-cnc-border hover:border-slate-500 rounded p-2 flex flex-col justify-between transition cursor-pointer">
+<div class="flex items-center justify-between">
+<label class="flex items-center space-x-1.5 text-xs font-bold text-slate-300">
+<input class="rounded border-slate-600 text-sky-500 focus:ring-0 w-3 h-3 bg-cnc-900" type="checkbox"/>
+<span>K01</span>
+</label>
+<span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">대기</span>
+</div>
+<div class="mt-1 text-[11px] text-slate-500 font-mono truncate">- | -</div>
+</div>
+<!-- Machine K02 -->
+<div class="bg-cnc-850 border border-cnc-border hover:border-slate-500 rounded p-2 flex flex-col justify-between transition cursor-pointer">
+<div class="flex items-center justify-between">
+<label class="flex items-center space-x-1.5 text-xs font-bold text-slate-300">
+<input class="rounded border-slate-600 text-sky-500 focus:ring-0 w-3 h-3 bg-cnc-900" type="checkbox"/>
+<span>K02</span>
+</label>
+<span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">대기</span>
+</div>
+<div class="mt-1 text-[11px] text-slate-500 font-mono truncate">- | -</div>
+</div>
+<!-- Machine R01 (ACTIVE WORKING) -->
+<div class="bg-emerald-950/40 border-2 border-emerald-500/80 rounded p-2 flex flex-col justify-between shadow-md relative overflow-hidden cursor-pointer pulse-status">
+<div class="absolute top-0 right-0 w-2 h-2 bg-emerald-400 rounded-bl"></div>
+<div class="flex items-center justify-between">
+<label class="flex items-center space-x-1.5 text-xs font-extrabold text-emerald-300">
+<input checked="" class="rounded border-emerald-500 text-emerald-500 focus:ring-0 w-3 h-3 bg-cnc-900" type="checkbox"/>
+<span>R01</span>
+</label>
+<span class="text-[10px] bg-emerald-500 text-cnc-950 px-1.5 py-0.2 rounded font-extrabold tracking-wide uppercase">가공중</span>
+</div>
+<div class="mt-1 text-[10px] text-emerald-200 font-mono truncate font-medium">0177-NST2610-SOCKET-RG750P...</div>
+</div>
+<!-- Machine R02 (CHECKED STANDBY) -->
+<div class="bg-cnc-850 border border-amber-500/50 rounded p-2 flex flex-col justify-between hover:border-amber-400 transition cursor-pointer">
+<div class="flex items-center justify-between">
+<label class="flex items-center space-x-1.5 text-xs font-bold text-amber-200">
+<input checked="" class="rounded border-amber-500 text-amber-500 focus:ring-0 w-3 h-3 bg-cnc-900" type="checkbox"/>
+<span>R02</span>
+</label>
+<span class="text-[10px] bg-amber-500/20 border border-amber-500/40 text-amber-300 px-1.5 py-0.5 rounded font-mono">대기</span>
+</div>
+<div class="mt-1 text-[11px] text-slate-500 font-mono truncate">- | -</div>
+</div>
+<!-- Machine R03 -->
+<div class="bg-cnc-850 border border-cnc-border hover:border-slate-500 rounded p-2 flex flex-col justify-between transition cursor-pointer">
+<div class="flex items-center justify-between">
+<label class="flex items-center space-x-1.5 text-xs font-bold text-slate-300">
+<input class="rounded border-slate-600 text-sky-500 focus:ring-0 w-3 h-3 bg-cnc-900" type="checkbox"/>
+<span>R03</span>
+</label>
+<span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">대기</span>
+</div>
+<div class="mt-1 text-[11px] text-slate-500 font-mono truncate">- | -</div>
+</div>
+<!-- Machine R04 -->
+<div class="bg-cnc-850 border border-cnc-border hover:border-slate-500 rounded p-2 flex flex-col justify-between transition cursor-pointer">
+<div class="flex items-center justify-between">
+<label class="flex items-center space-x-1.5 text-xs font-bold text-slate-300">
+<input class="rounded border-slate-600 text-sky-500 focus:ring-0 w-3 h-3 bg-cnc-900" type="checkbox"/>
+<span>R04</span>
+</label>
+<span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">대기</span>
+</div>
+<div class="mt-1 text-[11px] text-slate-500 font-mono truncate">- | -</div>
+</div>
+<!-- Machine R05 -->
+<div class="bg-cnc-850 border border-cnc-border hover:border-slate-500 rounded p-2 flex flex-col justify-between transition cursor-pointer">
+<div class="flex items-center justify-between">
+<label class="flex items-center space-x-1.5 text-xs font-bold text-slate-300">
+<input class="rounded border-slate-600 text-sky-500 focus:ring-0 w-3 h-3 bg-cnc-900" type="checkbox"/>
+<span>R05</span>
+</label>
+<span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">대기</span>
+</div>
+<div class="mt-1 text-[11px] text-slate-500 font-mono truncate">- | -</div>
+</div>
+</div>
+</section>
+<!-- END: MachineSelectorStrip -->
+<!-- BEGIN: MainDashboardWorkspace -->
+<main class="flex-1 p-3 grid grid-cols-12 gap-3 overflow-hidden" data-purpose="mes-work-center-container">
+<!-- LEFT WORKSPACE: Operation Control & Defect History (Cols: 7) -->
+<div class="col-span-12 xl:col-span-7 flex flex-col space-y-3 overflow-y-auto pr-1">
+<!-- BEGIN: OperationControlCard -->
+<section class="bg-cnc-900 rounded-lg border border-cnc-border shadow-lg p-3 flex flex-col space-y-2.5" data-purpose="cnc-machining-control-panel">
+<!-- Panel Header -->
+<div class="flex items-center justify-between border-b border-cnc-border pb-2">
+<div class="flex items-center space-x-2">
+<i class="fa-solid fa-sliders text-sky-400 text-sm"></i>
+<h2 class="text-sm font-bold text-white tracking-wide">장비 작업 제어 및 탭별 작업버튼</h2>
+<span class="text-[11px] text-slate-400 font-normal">(클릭=즉시보고 / 우클릭·편집=내용수정)</span>
+</div>
+<button class="text-[11px] text-sky-400 hover:text-sky-300 flex items-center space-x-1 bg-cnc-800 hover:bg-cnc-700 px-2 py-0.5 rounded border border-cnc-borderLight" type="button">
+<i class="fa-solid fa-gear text-xs"></i>
+<span>[일시대기] 버튼 편집</span>
+</button>
+</div>
+<!-- Work Order Bar & Item Specifications -->
+<div class="bg-cnc-850 p-2.5 rounded border border-cnc-borderLight flex flex-col space-y-2 text-xs">
+<div class="flex flex-wrap items-center gap-2">
+<span class="font-bold text-slate-300 w-16 shrink-0">작업지시서:</span>
+<div class="flex-1 min-w-[280px] bg-cnc-950 px-2.5 py-1 rounded border border-cnc-border text-slate-200 font-mono truncate text-xs">
+              [0177-NST2610-SOCKET-RG750P2(UW.BW.PC.00.00.737.00)] 0177-NST2610-SOCKET-RG750P2(UW.BW.PC.00.00.737.00) (1) - 1EA [대기]
+            </div>
+<button class="bg-sky-700 hover:bg-sky-600 text-white font-semibold px-2.5 py-1 rounded text-xs transition flex items-center space-x-1 shrink-0" type="button">
+<i class="fa-regular fa-folder-open"></i>
+<span>지시서 상세선택</span>
+</button>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-12 gap-2 items-center pt-1 border-t border-cnc-border/60">
+<div class="md:col-span-4 flex items-center space-x-1.5">
+<span class="text-amber-400 font-bold shrink-0">작지번호:</span>
+<span class="bg-cnc-900 border border-cnc-border px-2 py-0.5 rounded font-mono text-slate-200 truncate flex-1">0177-NST2610-SOCKE</span>
+</div>
+<div class="md:col-span-4 flex items-center space-x-1.5">
+<span class="text-emerald-400 font-bold shrink-0">가공품목:</span>
+<span class="bg-cnc-900 border border-cnc-border px-2 py-0.5 rounded font-mono text-slate-200 truncate flex-1">0177-NST2610-SOCKET-RG750P2</span>
+</div>
+<div class="md:col-span-2 flex items-center space-x-1.5">
+<span class="text-slate-400 font-bold shrink-0">수량:</span>
+<span class="bg-cnc-900 border border-cnc-border px-2 py-0.5 rounded font-mono text-center w-12 text-white font-bold">1</span>
+</div>
+<div class="md:col-span-2 flex items-center justify-end">
+<label class="flex items-center space-x-1.5 cursor-pointer text-[11px] text-slate-300">
+<input checked="" class="rounded border-slate-600 text-sky-500 focus:ring-0 w-3 h-3 bg-cnc-900" type="checkbox"/>
+<span class="truncate">담당장비 일괄적용</span>
+</label>
+</div>
+</div>
+</div>
+<!-- 5 Major CNC Core Mode Action Buttons -->
+<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2" data-purpose="primary-action-mode-buttons">
+<!-- Button 1: Setting -->
+<button class="flex items-center justify-center space-x-1.5 py-2.5 px-3 bg-cnc-800 hover:bg-cnc-700 text-slate-200 hover:text-white border border-cnc-border rounded-md font-bold text-xs transition active:scale-95 shadow" type="button">
+<i class="fa-solid fa-wrench text-sky-400"></i>
+<span>세팅/단도리</span>
+</button>
+<!-- Button 2: Machining (ACTIVE) -->
+<button class="flex items-center justify-center space-x-1.5 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/80 rounded-md font-extrabold text-xs transition shadow-lg shadow-emerald-950 ring-2 ring-emerald-500/50" type="button">
+<i class="fa-solid fa-bolt-lightning animate-bounce text-amber-300"></i>
+<span>본가공/절삭</span>
+</button>
+<!-- Button 3: In-process Inspection -->
+<button class="flex items-center justify-center space-x-1.5 py-2.5 px-3 bg-cnc-800 hover:bg-cnc-700 text-slate-200 hover:text-white border border-cnc-border rounded-md font-bold text-xs transition active:scale-95 shadow" type="button">
+<i class="fa-solid fa-ruler-combined text-emerald-400"></i>
+<span>중간측정</span>
+</button>
+<!-- Button 4: Tool Change -->
+<button class="flex items-center justify-center space-x-1.5 py-2.5 px-3 bg-cnc-800 hover:bg-cnc-700 text-slate-200 hover:text-white border border-cnc-border rounded-md font-bold text-xs transition active:scale-95 shadow" type="button">
+<i class="fa-solid fa-screwdriver-wrench text-amber-400"></i>
+<span>공구교체</span>
+</button>
+<!-- Button 5: Temporary Standby / Alarm -->
+<div class="flex space-x-1">
+<button class="flex-1 flex items-center justify-center space-x-1 py-2.5 bg-cnc-800 hover:bg-cnc-700 text-amber-300 border border-cnc-border rounded-md font-bold text-xs transition active:scale-95 shadow" type="button">
+<i class="fa-solid fa-pause"></i>
+<span>일시대기</span>
+</button>
+<button class="w-8 flex items-center justify-center bg-rose-950/80 hover:bg-rose-900 border border-rose-600/50 text-rose-400 rounded-md transition" title="알람/이상" type="button">
+<i class="fa-solid fa-bell"></i>
+</button>
+</div>
+</div>
+<!-- 12-Item Field Inspection & Status Notification Matrix -->
+<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-1.5 text-[11px]" data-purpose="quick-status-report-buttons">
+<button class="p-2 bg-cnc-850 hover:bg-cnc-800 border border-cnc-border hover:border-sky-500 rounded text-left text-slate-300 hover:text-sky-300 flex items-start space-x-1.5 transition" type="button">
+<i class="fa-regular fa-square-check text-sky-400 mt-0.5 shrink-0"></i>
+<span class="leading-tight">장비 내부 칩(Chip) 청소 및 정리</span>
+</button>
+<button class="p-2 bg-cnc-850 hover:bg-cnc-800 border border-cnc-border hover:border-sky-500 rounded text-left text-slate-300 hover:text-sky-300 flex items-start space-x-1.5 transition" type="button">
+<i class="fa-regular fa-square-check text-sky-400 mt-0.5 shrink-0"></i>
+<span class="leading-tight">절삭유(쿨런트) 농도 점검 및 보충</span>
+</button>
+<button class="p-2 bg-cnc-850 hover:bg-cnc-800 border border-cnc-border hover:border-sky-500 rounded text-left text-slate-300 hover:text-sky-300 flex items-start space-x-1.5 transition" type="button">
+<i class="fa-regular fa-square-check text-sky-400 mt-0.5 shrink-0"></i>
+<span class="leading-tight">소재 반입 및 다음 작지 투입 대기</span>
+</button>
+<button class="p-2 bg-cnc-850 hover:bg-cnc-800 border border-cnc-border hover:border-sky-500 rounded text-left text-slate-300 hover:text-sky-300 flex items-start space-x-1.5 transition" type="button">
+<i class="fa-regular fa-square-check text-sky-400 mt-0.5 shrink-0"></i>
+<span class="leading-tight">측정실 초품/중간검사 판정 결과 대기</span>
+</button>
+<button class="p-2 bg-cnc-850 hover:bg-cnc-800 border border-cnc-border hover:border-sky-500 rounded text-left text-slate-300 hover:text-sky-300 flex items-start space-x-1.5 transition" type="button">
+<i class="fa-regular fa-square-check text-sky-400 mt-0.5 shrink-0"></i>
+<span class="leading-tight">도면/NC프로그램 수정 확인 대기</span>
+</button>
+<button class="p-2 bg-cnc-850 hover:bg-cnc-800 border border-cnc-border hover:border-sky-500 rounded text-left text-slate-300 hover:text-sky-300 flex items-start space-x-1.5 transition" type="button">
+<i class="fa-regular fa-square-check text-sky-400 mt-0.5 shrink-0"></i>
+<span class="leading-tight">전공정 완료 부품 인계 대기</span>
+</button>
+<button class="p-2 bg-cnc-850 hover:bg-cnc-800 border border-cnc-border hover:border-sky-500 rounded text-left text-slate-300 hover:text-sky-300 flex items-start space-x-1.5 transition" type="button">
+<i class="fa-regular fa-square-check text-sky-400 mt-0.5 shrink-0"></i>
+<span class="leading-tight">가공 완료품 에어건 세척 및 적재</span>
+</button>
+<button class="p-2 bg-cnc-850 hover:bg-cnc-800 border border-cnc-border hover:border-sky-500 rounded text-left text-slate-300 hover:text-sky-300 flex items-start space-x-1.5 transition" type="button">
+<i class="fa-regular fa-square-check text-sky-400 mt-0.5 shrink-0"></i>
+<span class="leading-tight">일일 설비 예방점검 (윤활유/공압)</span>
+</button>
+<button class="p-2 bg-cnc-850 hover:bg-cnc-800 border border-cnc-border hover:border-sky-500 rounded text-left text-slate-300 hover:text-sky-300 flex items-start space-x-1.5 transition" type="button">
+<i class="fa-regular fa-square-check text-sky-400 mt-0.5 shrink-0"></i>
+<span class="leading-tight">교대 시간 작업 인수인계 준비</span>
+</button>
+<button class="p-2 bg-cnc-850 hover:bg-cnc-800 border border-cnc-border hover:border-sky-500 rounded text-left text-slate-300 hover:text-sky-300 flex items-start space-x-1.5 transition" type="button">
+<i class="fa-regular fa-square-check text-sky-400 mt-0.5 shrink-0"></i>
+<span class="leading-tight">치구/자재 수급 대기 중</span>
+</button>
+<button class="p-2 bg-cnc-850 hover:bg-cnc-800 border border-cnc-border hover:border-sky-500 rounded text-left text-slate-300 hover:text-sky-300 flex items-start space-x-1.5 transition" type="button">
+<i class="fa-regular fa-square-check text-sky-400 mt-0.5 shrink-0"></i>
+<span class="leading-tight">서브인원 작업 교육 및 업무 지시</span>
+</button>
+<button class="p-2 bg-cnc-850 hover:bg-cnc-800 border border-cnc-border hover:border-sky-500 rounded text-left text-slate-300 hover:text-sky-300 flex items-start space-x-1.5 transition" type="button">
+<i class="fa-regular fa-square-check text-sky-400 mt-0.5 shrink-0"></i>
+<span class="leading-tight">작업자 휴식 / 중식 일시대기</span>
+</button>
+</div>
+<!-- Manual Work Log Entry Input Row -->
+<div class="flex items-center space-x-2 pt-1">
+<div class="relative flex-1">
+<span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500 text-xs">
+<i class="fa-solid fa-pen-to-square"></i>
+</span>
+<input class="w-full bg-cnc-950 border border-cnc-borderLight rounded pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 font-mono" placeholder="세부 작업 내용 직접 입력..." type="text" value="라우터"/>
+</div>
+<button class="bg-cnc-700 hover:bg-cnc-600 text-white text-xs font-bold px-3 py-1.5 rounded border border-cnc-borderLight transition flex items-center space-x-1.5 shrink-0" type="button">
+<i class="fa-solid fa-floppy-disk text-sky-400"></i>
+<span>수동 작업이력 기록·보고</span>
+</button>
+</div>
+<!-- Emergency Alert Critical Button -->
+<button class="w-full bg-gradient-to-r from-rose-700 via-red-600 to-rose-700 hover:from-rose-600 hover:to-rose-600 text-white font-extrabold text-xs py-2 rounded-md tracking-wider flex items-center justify-center space-x-2 shadow-lg glow-red transition uppercase" type="button">
+<i class="fa-solid fa-triangle-exclamation text-amber-300 animate-pulse text-sm"></i>
+<span>긴급 이슈 · 공구 파손 · 불량 등록 및 서버 즉시 전송</span>
+<i class="fa-solid fa-paper-plane text-xs"></i>
+</button>
+</section>
+<!-- END: OperationControlCard -->
+<!-- BEGIN: DefectHistorySection -->
+<section class="bg-cnc-900 rounded-lg border border-cnc-border shadow-lg p-3 flex flex-col space-y-2.5 flex-1" data-purpose="defect-and-tool-management">
+<!-- Sub-Tabs Navigation -->
+<div class="flex items-center justify-between border-b border-cnc-border pb-1.5">
+<div class="flex space-x-1">
+<button class="px-3 py-1 bg-cnc-800 text-sky-400 border-b-2 border-sky-400 text-xs font-bold rounded-t flex items-center space-x-1.5" type="button">
+<i class="fa-solid fa-bug text-xs"></i>
+<span>불량·수정·대책 히스토리 기록 및 조회</span>
+</button>
+<button class="px-3 py-1 text-slate-400 hover:text-slate-200 text-xs font-medium rounded-t flex items-center space-x-1.5 hover:bg-cnc-850" type="button">
+<i class="fa-solid fa-cubes text-xs"></i>
+<span>주요 가공 사용 공구 목록</span>
+</button>
+<button class="px-3 py-1 text-slate-400 hover:text-slate-200 text-xs font-medium rounded-t flex items-center space-x-1.5 hover:bg-cnc-850" type="button">
+<i class="fa-solid fa-clipboard-user text-xs"></i>
+<span>서브인원 작업 지시 및 보고 취합</span>
+</button>
+</div>
+</div>
+<!-- Defect Registration Form -->
+<div class="bg-cnc-850/80 p-2.5 rounded border border-cnc-border flex flex-col space-y-2 text-xs">
+<!-- Form Header Row -->
+<div class="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
+<div class="md:col-span-3 flex items-center space-x-1.5">
+<label class="text-slate-400 font-semibold shrink-0">구분:</label>
+<select class="w-full bg-cnc-900 border border-cnc-border rounded px-2 py-1 text-xs text-emerald-400 font-bold focus:ring-0">
+<option selected="">가공중</option>
+<option>세팅중</option>
+<option>완료검사</option>
+</select>
+</div>
+<div class="md:col-span-3 flex items-center space-x-1.5">
+<label class="text-slate-400 font-semibold shrink-0">유형:</label>
+<select class="w-full bg-cnc-900 border border-cnc-border rounded px-2 py-1 text-xs text-rose-400 font-bold focus:ring-0">
+<option selected="">치수불량</option>
+<option>면조도불량</option>
+<option>버(Burr)발생</option>
+<option>공구파손/치핑</option>
+<option>소재불량</option>
+</select>
+</div>
+<div class="md:col-span-4 flex items-center space-x-1.5">
+<span class="text-slate-400 font-semibold shrink-0">작지/품목:</span>
+<span class="text-[11px] bg-cnc-900 border border-cnc-border text-slate-300 px-2 py-1 rounded truncate flex-1 font-mono">0177-NST2610-SOCKET-RG750P2</span>
+</div>
+<div class="md:col-span-2 flex justify-end">
+<button class="w-full bg-rose-700 hover:bg-rose-600 text-white font-bold py-1 px-2 rounded text-xs transition flex items-center justify-center space-x-1 shadow" type="button">
+<i class="fa-solid fa-plus-circle"></i>
+<span>불량·수정·대책 등록</span>
+</button>
+</div>
+</div>
+<!-- Form Detail Inputs -->
+<div class="grid grid-cols-1 md:grid-cols-12 gap-2">
+<div class="md:col-span-7 flex items-center space-x-2">
+<span class="text-rose-400 font-bold text-[11px] shrink-0 w-16">불량/수정내용:</span>
+<input class="flex-1 bg-cnc-950 border border-cnc-borderLight rounded px-2 py-1 text-xs text-slate-200 font-mono focus:border-sky-500" type="text" value="포켓 깊이 +0.02mm 편차 발생 및 프로그램 수정"/>
+</div>
+<div class="md:col-span-5 flex items-center space-x-2">
+<span class="text-slate-400 font-semibold text-[11px] shrink-0">발생원인:</span>
+<input class="flex-1 bg-cnc-950 border border-cnc-borderLight rounded px-2 py-1 text-xs text-slate-200 font-mono focus:border-sky-500" type="text" value="엔드밀 공구 마모 및 Z축 열변위"/>
+</div>
+</div>
+<!-- Countermeasure & Edit Action Button -->
+<div class="flex items-center space-x-2">
+<span class="text-emerald-400 font-bold text-[11px] shrink-0 w-16">조치/재발대책:</span>
+<input class="flex-1 bg-cnc-950 border border-cnc-borderLight rounded px-2 py-1 text-xs text-slate-200 font-mono focus:border-sky-500" type="text" value="신품 공구 교체 후 Z축 옵셋 -0.02mm 보정, 5EA마다 중간측정 실시"/>
+<button class="bg-cnc-700 hover:bg-cnc-600 text-sky-300 font-bold px-3 py-1 rounded text-xs border border-cnc-borderLight transition flex items-center space-x-1 shrink-0" type="button">
+<i class="fa-solid fa-pen-nib"></i>
+<span>선택 히스토리 수정</span>
+</button>
+</div>
+</div>
+<!-- Defect History Data Table -->
+<div class="overflow-x-auto rounded border border-cnc-border flex-1 max-h-36 bg-cnc-950">
+<table class="w-full text-left text-[11px] border-collapse" data-purpose="defect-log-table">
+<thead class="bg-cnc-850 text-slate-300 uppercase font-semibold sticky top-0 border-b border-cnc-border text-[10px]">
+<tr>
+<th class="p-1.5 text-center w-8">No</th>
+<th class="p-1.5 w-12 text-center">장비</th>
+<th class="p-1.5 w-32">작지/품목</th>
+<th class="p-1.5 w-16 text-center">유형</th>
+<th class="p-1.5">불량 및 수정 내용</th>
+<th class="p-1.5">발생 원인</th>
+<th class="p-1.5">조치 및 재발방지 대책</th>
+<th class="p-1.5 w-24 text-center">작성자/일시</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-cnc-border font-mono text-slate-300">
+<tr class="hover:bg-cnc-800/60 transition cursor-pointer bg-cnc-900/40">
+<td class="p-1.5 text-center text-slate-400">1</td>
+<td class="p-1.5 text-center font-bold text-sky-400">R01</td>
+<td class="p-1.5 truncate max-w-[120px] text-slate-300">0177-NST2610-SOCKET</td>
+<td class="p-1.5 text-center"><span class="px-1.5 py-0.5 rounded bg-rose-950 text-rose-400 border border-rose-800/40 text-[10px]">치수불량</span></td>
+<td class="p-1.5 text-slate-200">포켓 깊이 +0.02mm 편차 발생</td>
+<td class="p-1.5 text-slate-400">엔드밀 공구 마모</td>
+<td class="p-1.5 text-emerald-300">공구교체 및 Z축 옵셋 보정</td>
+<td class="p-1.5 text-center text-[10px] text-slate-400">a / 10-29 13:10</td>
+</tr>
+<tr class="hover:bg-cnc-800/60 transition cursor-pointer">
+<td class="p-1.5 text-center text-slate-400">2</td>
+<td class="p-1.5 text-center font-bold text-amber-400">R02</td>
+<td class="p-1.5 truncate max-w-[120px] text-slate-300">0165-PLUG-BASE</td>
+<td class="p-1.5 text-center"><span class="px-1.5 py-0.5 rounded bg-amber-950 text-amber-400 border border-amber-800/40 text-[10px]">면조도</span></td>
+<td class="p-1.5 text-slate-200">측면 조도 불량(떨림 자국)</td>
+<td class="p-1.5 text-slate-400">클램핑 압력 부족</td>
+<td class="p-1.5 text-emerald-300">치구 클램프 재조정 완료</td>
+<td class="p-1.5 text-center text-[10px] text-slate-400">b / 10-29 11:24</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<!-- END: DefectHistorySection -->
+</div>
+<!-- END: Left Workspace -->
+<!-- RIGHT WORKSPACE: Real-time Execution History & Field Chat (Cols: 5) -->
+<div class="col-span-12 xl:col-span-5 flex flex-col space-y-3 overflow-hidden">
+<!-- BEGIN: ExecutionHistoryCard -->
+<section class="bg-cnc-900 rounded-lg border border-cnc-border shadow-lg p-3 flex flex-col flex-1 min-h-[300px]" data-purpose="machine-realtime-activity-log">
+<!-- Header & Action Filters -->
+<div class="flex items-center justify-between border-b border-cnc-border pb-2 shrink-0">
+<div class="flex items-center space-x-2">
+<i class="fa-solid fa-clock-rotate-left text-sky-400 text-sm"></i>
+<h2 class="text-sm font-bold text-white tracking-wide">장비 최근 작업 이력</h2>
+<span class="text-[11px] text-slate-400">(더블클릭 시 수정)</span>
+</div>
+<div class="flex items-center space-x-2">
+<button class="px-2 py-1 bg-sky-700 hover:bg-sky-600 text-white text-xs font-semibold rounded border border-sky-500/40 transition flex items-center space-x-1" type="button">
+<i class="fa-solid fa-pen-to-square text-[10px]"></i>
+<span>선택 이력 수정</span>
+</button>
+<button class="px-2 py-1 bg-rose-800 hover:bg-rose-700 text-white text-xs font-semibold rounded border border-rose-500/40 transition flex items-center space-x-1" type="button">
+<i class="fa-solid fa-trash-can text-[10px]"></i>
+<span>오클릭 삭제</span>
+</button>
+<label class="flex items-center space-x-1 text-xs text-slate-300 cursor-pointer pl-1">
+<input checked="" class="rounded border-slate-600 text-sky-500 focus:ring-0 w-3 h-3 bg-cnc-900" type="checkbox"/>
+<span class="text-[11px]">내 담당만</span>
+</label>
+</div>
+</div>
+<!-- Real-time Activity Table -->
+<div class="overflow-y-auto flex-1 mt-2 rounded border border-cnc-border bg-cnc-950">
+<table class="w-full text-left text-xs border-collapse" data-purpose="realtime-activity-table">
+<thead class="bg-cnc-850 text-slate-300 font-semibold sticky top-0 border-b border-cnc-border text-[11px]">
+<tr>
+<th class="p-2 w-24">시각</th>
+<th class="p-2 w-14 text-center">장비</th>
+<th class="p-2 w-32">작지번호</th>
+<th class="p-2">품목(품명)</th>
+<th class="p-2 w-20">세부 작업내용</th>
+<th class="p-2 w-14 text-center">작업자</th>
+<th class="p-2 w-16 text-center">상태</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-cnc-border font-mono text-[11px]">
+<!-- Row 1 Selected -->
+<tr class="bg-sky-950/60 hover:bg-sky-900/50 text-sky-200 border-l-2 border-sky-400 cursor-pointer">
+<td class="p-2 font-medium">10-29 13:19</td>
+<td class="p-2 text-center font-bold text-white">R01</td>
+<td class="p-2 truncate max-w-[110px]" title="0177-NST2610-SOCKET-RG750P2">0177-NST2610-S...</td>
+<td class="p-2 truncate max-w-[120px]" title="0177-NST2610-SOCKET-RG750P2">0177-NST2610-SOC...</td>
+<td class="p-2 text-amber-300 font-sans font-bold">라우터</td>
+<td class="p-2 text-center text-slate-300">a</td>
+<td class="p-2 text-center">
+<span class="px-2 py-0.5 rounded-full bg-emerald-500 text-cnc-950 text-[10px] font-extrabold uppercase font-sans">가공중</span>
+</td>
+</tr>
+<!-- Row 2 -->
+<tr class="hover:bg-cnc-850/60 text-slate-300 cursor-pointer">
+<td class="p-2 font-medium text-slate-400">10-29 13:19</td>
+<td class="p-2 text-center font-bold text-sky-400">R01</td>
+<td class="p-2 truncate max-w-[110px]" title="0177-NST2610-SOCKET-RG750P2">0177-NST2610-S...</td>
+<td class="p-2 truncate max-w-[120px]" title="0177-NST2610-SOCKET-RG750P2">0177-NST2610-SOC...</td>
+<td class="p-2 text-slate-300 font-sans">라우터</td>
+<td class="p-2 text-center text-slate-300">a</td>
+<td class="p-2 text-center">
+<span class="px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-600/40 text-[10px] font-bold font-sans">가공중</span>
+</td>
+</tr>
+<!-- Additional Demo Rows for Realism -->
+<tr class="hover:bg-cnc-850/60 text-slate-400 cursor-pointer">
+<td class="p-2 font-medium text-slate-500">10-29 12:45</td>
+<td class="p-2 text-center font-bold text-amber-400">R02</td>
+<td class="p-2 truncate max-w-[110px]">0165-PLUG-B...</td>
+<td class="p-2 truncate max-w-[120px]">0165-PLUG-BASE...</td>
+<td class="p-2 text-slate-400 font-sans">엔드밀 교체</td>
+<td class="p-2 text-center text-slate-400">b</td>
+<td class="p-2 text-center">
+<span class="px-2 py-0.5 rounded-full bg-amber-950 text-amber-300 border border-amber-600/40 text-[10px] font-sans">대기</span>
+</td>
+</tr>
+<tr class="hover:bg-cnc-850/60 text-slate-400 cursor-pointer">
+<td class="p-2 font-medium text-slate-500">10-29 11:30</td>
+<td class="p-2 text-center font-bold text-sky-400">R01</td>
+<td class="p-2 truncate max-w-[110px]">0177-NST2610-S...</td>
+<td class="p-2 truncate max-w-[120px]">0177-NST2610-SOC...</td>
+<td class="p-2 text-slate-400 font-sans">단도리 세팅</td>
+<td class="p-2 text-center text-slate-400">a</td>
+<td class="p-2 text-center">
+<span class="px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 text-[10px] font-sans">완료</span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<!-- END: ExecutionHistoryCard -->
+<!-- BEGIN: RealTimeShopFloorChat -->
+<section class="bg-cnc-900 rounded-lg border border-cnc-border shadow-lg p-3 flex flex-col h-72 shrink-0" data-purpose="shopfloor-instant-messaging">
+<!-- Chat Header -->
+<div class="flex items-center justify-between border-b border-cnc-border pb-2 shrink-0">
+<div class="flex items-center space-x-2">
+<i class="fa-regular fa-comments text-sky-400 text-sm"></i>
+<h2 class="text-sm font-bold text-white tracking-wide">현장 실시간 소통 채팅</h2>
+<span class="text-[10px] bg-sky-950 text-sky-400 border border-sky-800/40 px-1.5 py-0.5 rounded">서버 로그 자동저장</span>
+</div>
+<!-- Channel Selector -->
+<div class="flex items-center space-x-1.5">
+<i class="fa-solid fa-tower-broadcast text-xs text-slate-400"></i>
+<select class="bg-cnc-850 border border-cnc-border text-xs rounded px-2 py-1 text-slate-200 focus:ring-0 focus:border-sky-500">
+<option selected="">🌐 전체 공통 채널</option>
+<option>라인 A (R01~R05)</option>
+<option>라인 B (K01~K04)</option>
+<option>품질관리실 / 측정실</option>
+</select>
+</div>
+</div>
+<!-- Chat Stream Window -->
+<div class="flex-1 overflow-y-auto p-2 space-y-2 bg-cnc-950 rounded my-2 border border-cnc-border text-xs" data-purpose="chat-messages-container">
+<!-- System Announcement -->
+<div class="text-center my-1">
+<span class="bg-cnc-850 text-slate-400 text-[10px] px-2.5 py-0.5 rounded-full border border-cnc-border font-mono">
+              [시스템] R01 가공 시작 보고가 접수되었습니다 (13:19:04)
+            </span>
+</div>
+<!-- Message from Operator 'admin' -->
+<div class="flex items-start space-x-2">
+<div class="w-6 h-6 rounded bg-purple-900/60 border border-purple-500/40 text-purple-300 font-bold text-[10px] flex items-center justify-center shrink-0">
+              관
+            </div>
+<div class="max-w-[85%]">
+<div class="flex items-center space-x-1.5">
+<span class="font-bold text-[11px] text-purple-300">관리자(현장반장)</span>
+<span class="text-[9px] text-slate-500 font-mono">13:12</span>
+</div>
+<div class="bg-cnc-850 p-2 rounded-r-lg rounded-bl-lg border border-cnc-borderLight text-slate-200 mt-0.5 leading-relaxed text-[11px]">
+                R01 작지 0177 수량 완료 후 측정실 초품 샘플 1점 인계 즉시 부탁드립니다.
+              </div>
+</div>
+</div>
+<!-- Message from Current Operator 'a' (Self) -->
+<div class="flex items-start justify-end space-x-2">
+<div class="max-w-[85%] text-right">
+<div class="flex items-center justify-end space-x-1.5">
+<span class="text-[9px] text-slate-500 font-mono">13:14</span>
+<span class="font-bold text-[11px] text-sky-400">작업자 a (나)</span>
+</div>
+<div class="bg-sky-900/40 p-2 rounded-l-lg rounded-br-lg border border-sky-700/50 text-sky-100 mt-0.5 text-left leading-relaxed text-[11px]">
+                네, Z축 옵셋 보정 후 본가공 정상 진행 중입니다. 가공 완료 즉시 측정실 전달하겠습니다.
+              </div>
+</div>
+<div class="w-6 h-6 rounded bg-sky-900/80 border border-sky-400/50 text-sky-300 font-bold text-[10px] flex items-center justify-center shrink-0">
+              a
+            </div>
+</div>
+</div>
+<!-- Chat Input Bar -->
+<div class="flex items-center space-x-2 shrink-0">
+<input class="flex-1 bg-cnc-950 border border-cnc-borderLight rounded px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 font-sans" placeholder="현장 실시간 메시지 입력 (Enter to send)..." type="text"/>
+<button class="bg-sky-600 hover:bg-sky-500 text-white font-bold px-4 py-1.5 rounded text-xs transition flex items-center space-x-1 shadow" type="button">
+<span>전송</span>
+<i class="fa-solid fa-paper-plane text-[10px]"></i>
+</button>
+</div>
+</section>
+<!-- END: RealTimeShopFloorChat -->
+</div>
+<!-- END: Right Workspace -->
+</main>
+<!-- END: MainDashboardWorkspace -->
+<!-- BEGIN: BottomStatusBar -->
+<footer class="h-6 bg-cnc-900 border-t border-cnc-border px-4 flex items-center justify-between text-[11px] text-slate-400 font-mono shrink-0 select-none" data-purpose="footer-diagnostics-bar">
+<div class="flex items-center space-x-4">
+<span class="flex items-center gap-1.5 text-emerald-400">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> PLC I/O LINK: CONNECTED
+      </span>
+<span>DNC PROTOCOL: ACTIVE (PORT: 8080)</span>
+<span>BUFFER SYNC: 100%</span>
+</div>
+<div class="flex items-center space-x-4">
+<span>SERVER LATENCY: <strong class="text-sky-400">12ms</strong></span>
+<span>CNC CONTROL TERMINAL ID: <strong>TERM-SEC-01</strong></span>
+</div>
+</footer>
+<!-- END: BottomStatusBar -->
+<!-- Live Clock Script -->
+<script data-purpose="system-live-clock">
+    function updateClock() {
+      const clockElement = document.getElementById('live-clock');
+      if (clockElement) {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        const seconds = String(now.getSeconds()).padStart(2, '0');
+        clockElement.textContent = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+      }
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+  </script>
+</body></html>

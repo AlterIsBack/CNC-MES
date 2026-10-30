@@ -1,0 +1,33 @@
+## Build & Publish Output
+**/bin/
+**/obj/
+publish/
+*.zip
+*.7z
+*.rar
+
+## Database & Runtime Data
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+## Temporary & Lock Files
+*.DOCX
+*.docx
+~$*
+
+## IDE & OS Files
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+Thumbs.db
+[Dd]esktop.ini
+
+## Logs & Temp
+*.log
+scratch/
+temp/
