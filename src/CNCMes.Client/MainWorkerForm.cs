@@ -1,3 +1,4 @@
+using CNCMes.Client.Workflow;
 using System.Text.Json;
 
 namespace CNCMes.Client;
@@ -396,6 +397,16 @@ public class MainWorkerForm : Form
             e.Graphics.DrawString($"작업자 [{_session.DisplayName}]", fontTxt, brushTxt, new PointF(32, 7));
         };
 
+        var btnSwitchToWf = CreateFlatButton("⚡ 워크플로우 뷰", Color.FromArgb(168, 85, 247), Color.White, 130, 32);
+        btnSwitchToWf.Font = new Font("맑은 고딕", 8.8f, FontStyle.Bold);
+        btnSwitchToWf.Margin = new Padding(4, 0, 0, 0);
+        btnSwitchToWf.Click += (s, e) => {
+            var wf = new WorkflowMainForm(_api, _session);
+            wf.Show();
+            Hide();
+            wf.FormClosed += (s2, e2) => Close();
+        };
+
         _btnOrderList = CreateFlatButton("📋 작업지시서 목록 열람", Color.FromArgb(2, 132, 199), Color.White, 155, 32);
         _btnOrderList.Font = new Font("맑은 고딕", 8.8f, FontStyle.Bold);
         _btnOrderList.Margin = new Padding(4, 0, 0, 0);
@@ -411,7 +422,7 @@ public class MainWorkerForm : Form
         _btnNewChatBadge.Margin = new Padding(4, 0, 0, 0);
         _btnNewChatBadge.Click += (s, e) => ClearUnreadChatAlert();
 
-        pnlRightActions.Controls.AddRange(new Control[] { btnRefreshAll, pnlUserBadge, _btnOrderList, _btnNoticeAlert, _btnNewChatBadge });
+        pnlRightActions.Controls.AddRange(new Control[] { btnRefreshAll, pnlUserBadge, btnSwitchToWf, _btnOrderList, _btnNoticeAlert, _btnNewChatBadge });
         headerBar.Controls.Add(pnlRightActions, 2, 0);
         rootTable.Controls.Add(headerBar, 0, 0);
 

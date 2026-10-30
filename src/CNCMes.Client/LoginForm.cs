@@ -1,3 +1,4 @@
+using CNCMes.Client.Workflow;
 namespace CNCMes.Client;
 
 public class LoginForm : Form
@@ -391,9 +392,9 @@ public class LoginForm : Form
             return;
         }
 
-        // Launch Worker Kiosk Form
+        // Launch Modern Workflow Client Form (v1.3.7)
         Hide();
-        var workerForm = new MainWorkerForm(_api, session);
+        var workerForm = new WorkflowMainForm(_api, session);
         workerForm.FormClosed += (s, e) => Close();
         workerForm.Show();
     }
