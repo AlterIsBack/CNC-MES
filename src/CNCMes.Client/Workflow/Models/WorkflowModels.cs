@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Drawing;
 using System.Text.Json.Serialization;
 
 namespace CNCMes.Client.Workflow.Models;
@@ -75,6 +78,9 @@ public class WorkflowEdge
     public string ToNodeId { get; set; } = "";
     public EdgeType Type { get; set; } = EdgeType.Sequence;
     public string Label { get; set; } = "";
+
+    [JsonIgnore]
+    public bool IsSelected { get; set; }
 }
 
 public class WorkflowData

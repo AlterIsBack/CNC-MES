@@ -358,43 +358,50 @@ public class WorkflowMainForm : Form
             Padding = new Padding(0)
         };
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 160f)); // Card 1: 6 Action Buttons (2x3 grid)
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 175f)); // Card 1: 6 Action Buttons (2x3 grid, clean spacing)
         panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));  // Card 2: Orders & Parts List (Full remaining height)
 
         // Card 1: Workflow Menu Buttons (6 Action Buttons per spec)
         var cardMenu = CreateCard("📋 워크플로우 제어 메뉴");
-        var menuGrid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 3, Margin = new Padding(0) };
+        var menuGrid = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 3,
+            Margin = new Padding(2),
+            Padding = new Padding(2)
+        };
         menuGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
         menuGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
         menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 33.3f));
         menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 33.3f));
         menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 33.3f));
 
-        var btnGenDefault = CreateFlatButton("⚡ 기본 워크플로우 생성", Palette.Bg800, Palette.AccentSky);
-        btnGenDefault.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
+        var btnGenDefault = CreateFlatButton("⚡ 기본 워크플로우", Palette.Bg800, Palette.AccentSky);
+        btnGenDefault.Font = new Font("맑은 고딕", 8.3f, FontStyle.Bold);
         btnGenDefault.Click += (s, e) => GenerateStandardWorkflowForSelectedPart(confirmIfNotEmpty: false);
 
-        var btnSaveDraft = CreateFlatButton("💾 임시저장 (로컬)", Palette.Bg800, Color.FromArgb(52, 211, 153));
-        btnSaveDraft.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
+        var btnSaveDraft = CreateFlatButton("💾 로컬 임시저장", Palette.Bg800, Color.FromArgb(52, 211, 153));
+        btnSaveDraft.Font = new Font("맑은 고딕", 8.3f, FontStyle.Bold);
         btnSaveDraft.Click += (s, e) => SaveWorkflowDraftLocally();
 
-        var btnConfirmServer = CreateFlatButton("🌐 계획 확정·서버공유", Color.FromArgb(8, 47, 73), Palette.AccentSky);
-        btnConfirmServer.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
+        var btnConfirmServer = CreateFlatButton("🌐 계획 확정·공유", Color.FromArgb(8, 47, 73), Palette.AccentSky);
+        btnConfirmServer.Font = new Font("맑은 고딕", 8.3f, FontStyle.Bold);
         btnConfirmServer.Click += async (s, e) => await ConfirmAndShareWorkflowAsync();
 
-        var btnExecuteSelected = CreateFlatButton("▶ 선택 작업 실행", Color.FromArgb(5, 150, 105), Color.White);
-        btnExecuteSelected.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
+        var btnExecuteSelected = CreateFlatButton("▶ 선택작업 실행", Color.FromArgb(5, 150, 105), Color.White);
+        btnExecuteSelected.Font = new Font("맑은 고딕", 8.3f, FontStyle.Bold);
         btnExecuteSelected.Click += async (s, e) => await ExecuteSelectedWorkflowNodeAsync();
 
-        var btnAutoLayout = CreateFlatButton("⟲ 자동배치", Palette.Bg800, Palette.Green);
-        btnAutoLayout.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
+        var btnAutoLayout = CreateFlatButton("⟲ 워크플로우 정렬", Palette.Bg800, Palette.Green);
+        btnAutoLayout.Font = new Font("맑은 고딕", 8.3f, FontStyle.Bold);
         btnAutoLayout.Click += (s, e) => _canvas.AutoLayout();
 
-        var btnClearPlan = CreateFlatButton("🗑 초기화", Palette.Bg800, Palette.Rose);
-        btnClearPlan.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
+        var btnClearPlan = CreateFlatButton("🗑 전체 초기화", Palette.Bg800, Palette.Rose);
+        btnClearPlan.Font = new Font("맑은 고딕", 8.3f, FontStyle.Bold);
         btnClearPlan.Click += (s, e) =>
         {
-            if (MessageBox.Show("현재 캔버스의 모든 노드를 초기화하시겠습니까?", "초기화 확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+            if (MessageBox.Show("현재 캔버스의 모든 노드와 연결선을 초기화하시겠습니까?", "초기화 확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
             {
                 _canvas.Clear();
                 UpdateWorkflowStats();
@@ -410,9 +417,16 @@ public class WorkflowMainForm : Form
         cardMenu.Controls.Add(menuGrid);
         panel.Controls.Add(cardMenu, 0, 0);
 
-        // Card 2: Work Orders & Parts List (Takes full height, no redundant bottom button)
+        // Card 2: Work Orders & Parts List
         var cardOrders = CreateCard("📦 작업지시서 및 대상 부품 목록");
-        var pnlOrderBody = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(0) };
+        var pnlOrderBody = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            Margin = new Padding(2),
+            Padding = new Padding(2)
+        };
         pnlOrderBody.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
         pnlOrderBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 30f)); // Order combo
         pnlOrderBody.RowStyles.Add(new RowStyle(SizeType.Percent, 100f)); // Parts list
@@ -621,6 +635,26 @@ public class WorkflowMainForm : Form
         _detailPanel.NodeUpdated += (node) => { _canvas.Invalidate(); UpdateWorkflowStats(); };
         _detailPanel.NodeDeleteRequested += (node) => _canvas.RemoveNode(node);
         _detailPanel.NodeDuplicateRequested += (node) => DuplicateSelectedNode(node);
+        _detailPanel.NodeDisconnectRequested += (node) =>
+        {
+            _canvas.RemoveEdgesForNode(node);
+            UpdateWorkflowStats();
+            MessageBox.Show($"'{node.Title}' 노드의 모든 앞뒤 연결선이 끊어졌습니다.", "연결 끊기 완료", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        };
+        _canvas.RequestAddQuickNode += (cat) =>
+        {
+            string title = cat switch
+            {
+                NodeCategory.Preparation => "소재 준비 및 원점 설정",
+                NodeCategory.Machining => "신규 NC 정밀 가공",
+                NodeCategory.Inspection => "정밀 치수 중간측정",
+                NodeCategory.Collaboration => "서브인원 작업 지시",
+                NodeCategory.PostProcess => "세척 및 포장 후처리",
+                NodeCategory.Issue => "공구 마모 치수 주의",
+                _ => "신규 공정"
+            };
+            AddQuickNode(cat, title);
+        };
         _detailPanel.SubWorkerTaskSendRequested += async (node, subWorker, instruction) => await SendSubWorkerTaskAsync(node, subWorker, instruction);
         panel.Controls.Add(_detailPanel, 0, 0);
 
@@ -1247,27 +1281,70 @@ public class WorkflowMainForm : Form
     private void UpdateWorkflowStats()
     {
         int running = _canvas.Nodes.Count(n => n.Status == NodeStatus.Running);
-        int pending = _canvas.Nodes.Count(n => n.Status == NodeStatus.PendingCheck);
+        int check = _canvas.Nodes.Count(n => n.Status == NodeStatus.PendingCheck);
         int completed = _canvas.Nodes.Count(n => n.Status == NodeStatus.Completed);
         int issue = _canvas.Nodes.Count(n => n.Status == NodeStatus.Issue);
 
-        _lblWorkflowStats.Text = $"워크플로우: 가공중 {running}건 | 측정대기 {pending}건 | 완료 {completed}건 | 이슈 {issue}건";
+        _lblWorkflowStats.Text = $"워크플로우: 진행중 {running}건 | 측정 {check}건 | 완료 {completed}건 | 이슈 {issue}건";
     }
 
     // =========================================================================
-    // SERVER API SYNC ON WORKFLOW NODE STATUS CHANGE
+    // SERVER API SYNC & WORKFLOW PROGRESS ADVANCEMENT
     // =========================================================================
     private async Task HandleNodeStatusChangeAsync(WorkflowNode node, NodeStatus newStatus)
     {
         try
         {
+            WorkflowNode? nextActivatedNode = null;
+
+            // When current node is Completed (1차완료 확정), advance next connected steps to Running/Inspection!
+            if (newStatus == NodeStatus.Completed)
+            {
+                node.CompletedAt = DateTime.Now;
+
+                // Trace outgoing edges to find next process steps
+                var outgoing = _canvas.Edges.Where(e => e.FromNodeId == node.Id).ToList();
+                foreach (var edge in outgoing)
+                {
+                    var nextNode = _canvas.Nodes.FirstOrDefault(n => n.Id == edge.ToNodeId);
+                    if (nextNode != null && nextNode.Status == NodeStatus.Ready)
+                    {
+                        // Set next step status (Inspection -> 측정, Machining/Prep/Post -> 진행중)
+                        if (nextNode.Category == NodeCategory.Inspection)
+                            nextNode.Status = NodeStatus.PendingCheck;
+                        else
+                            nextNode.Status = NodeStatus.Running;
+
+                        if (nextNode.StartedAt == null)
+                            nextNode.StartedAt = DateTime.Now;
+
+                        nextActivatedNode ??= nextNode;
+                    }
+                }
+
+                if (nextActivatedNode != null)
+                {
+                    _canvas.SelectedNode = nextActivatedNode;
+                    _detailPanel.BindNode(nextActivatedNode);
+                }
+            }
+
             string serverStatus = newStatus switch
             {
                 NodeStatus.Running => "가공중",
                 NodeStatus.PendingCheck => "가공중",
-                NodeStatus.Completed => "완료",
+                NodeStatus.Completed => (nextActivatedNode != null ? "가공중" : "완료"),
                 NodeStatus.Issue => "정지",
                 _ => "대기"
+            };
+
+            string statusPrompt = newStatus switch
+            {
+                NodeStatus.Running => $"[진행중] {node.Title}",
+                NodeStatus.PendingCheck => $"[측정중] {node.Title}",
+                NodeStatus.Completed => (nextActivatedNode != null ? $"[1차완료] {node.Title} ➔ 다음: [{nextActivatedNode.Title}]" : $"[완료] {node.Title}"),
+                NodeStatus.Issue => $"[이슈] {node.Title}",
+                _ => $"[대기] {node.Title}"
             };
 
             // 1. Call existing Server API: AddManualWorkLogAsync
@@ -1275,22 +1352,14 @@ public class WorkflowMainForm : Form
                 node.MachineId,
                 node.OrderNumber,
                 node.PartName,
-                $"[{WorkflowCanvasControl.GetCategoryKorean(node.Category)}] {node.Title}" + (string.IsNullOrWhiteSpace(node.Details) ? "" : $" - {node.Details}"),
+                $"[{WorkflowCanvasControl.GetCategoryKorean(node.Category)}] {node.Title} ({statusPrompt})" + (string.IsNullOrWhiteSpace(node.Details) ? "" : $" - {node.Details}"),
                 serverStatus,
                 _session.DisplayName,
                 node.Assignee,
                 1
             );
 
-            // 2. Update machine status on server
-            string statusPrompt = newStatus switch
-            {
-                NodeStatus.Running => $"[진행중] {node.Title}",
-                NodeStatus.Completed => $"[완료] {node.Title}",
-                NodeStatus.Issue => $"[이슈] {node.Title}",
-                _ => $"[대기] {node.Title}"
-            };
-
+            // 2. Update machine status on server (reflecting directly to classic dashboard & web dashboard)
             await _api.UpdateMachineStatusAsync(
                 node.MachineId,
                 serverStatus,
@@ -1300,7 +1369,7 @@ public class WorkflowMainForm : Form
                 _session.DisplayName
             );
 
-            // 3. If issue, register permanent defect record
+            // 3. If issue, register defect record
             if (newStatus == NodeStatus.Issue)
             {
                 await _api.CreateDefectAndCountermeasureAsync(

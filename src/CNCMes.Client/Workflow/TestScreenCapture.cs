@@ -33,10 +33,7 @@ public static class TestScreenCapture
             System.Threading.Thread.Sleep(50);
         }
 
-        // Simulate user clicking "기본 워크플로우 생성" twice:
-        // 1st Lane: R01 primary workflow
-        form.GenerateStandardWorkflowForSelectedPart(confirmIfNotEmpty: false);
-        // 2nd Lane: R02 parallel multi-machine workflow
+        // 1. Generate standard workflow
         form.GenerateStandardWorkflowForSelectedPart(confirmIfNotEmpty: false);
 
         for (int i = 0; i < 15; i++)

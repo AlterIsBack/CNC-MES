@@ -39,7 +39,7 @@ public class NodeDetailPanel : UserControl
     private TextBox _txtSubWorker = null!;
     private TextBox _txtSubInstruction = null!;
 
-    // 5 Status Buttons (Image 2 Exact Match: 대기, ▶가공, 📐측정, ⏹완료, 🚨이슈)
+    // 5 Status Buttons (대기, 진행중, 측정, 완료, 이슈)
     private Button _btnStatusReady = null!;
     private Button _btnStatusRunning = null!;
     private Button _btnStatusPendingCheck = null!;
@@ -49,6 +49,7 @@ public class NodeDetailPanel : UserControl
     // Action Buttons
     private Button _btnSaveDetails = null!;
     private Button _btnDuplicate = null!;
+    private Button _btnDisconnect = null!;
     private Button _btnDelete = null!;
     private Button _btnSendSubTask = null!;
 
@@ -56,6 +57,7 @@ public class NodeDetailPanel : UserControl
     public event Action<WorkflowNode>? NodeUpdated;
     public event Action<WorkflowNode>? NodeDeleteRequested;
     public event Action<WorkflowNode>? NodeDuplicateRequested;
+    public event Action<WorkflowNode>? NodeDisconnectRequested;
     public event Action<WorkflowNode, string, string>? SubWorkerTaskSendRequested;
 
     public NodeDetailPanel()
@@ -86,7 +88,7 @@ public class NodeDetailPanel : UserControl
         mainLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 35f));   // 5: Details / Memo Box
         mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32f));  // 6: Next Process Input
         mainLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 45f));   // 7: Sub-worker Dedicated Section
-        mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38f));  // 8: Action Buttons (Save/Duplicate/Delete)
+        mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38f));  // 8: Action Buttons (Save/Duplicate/Disconnect/Delete)
 
         // 0: Header
         var pnlHeader = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) };
@@ -164,23 +166,23 @@ public class NodeDetailPanel : UserControl
         row3.Controls.Add(pnlAss, 1, 0);
         mainLayout.Controls.Add(row3, 0, 3);
 
-        // 4: 5 Status Quick Action Buttons (Exact Image 2 Match: 대기, ▶가공, 📐측정, ⏹완료, 🚨이슈)
+        // 4: 5 Status Quick Action Buttons (대기, 진행중, 측정, 완료, 이슈)
         var row4 = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 5, Margin = new Padding(0, 2, 0, 2) };
         for (int i = 0; i < 5; i++) row4.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20f));
 
         _btnStatusReady = CreateFlatButton("대기", Color.FromArgb(42, 59, 76), Color.White);
         _btnStatusReady.Click += (s, e) => TriggerStatusChange(NodeStatus.Ready);
 
-        _btnStatusRunning = CreateFlatButton("▶가공", Color.FromArgb(5, 150, 105), Color.White);
+        _btnStatusRunning = CreateFlatButton("진행중", Color.FromArgb(5, 150, 105), Color.White);
         _btnStatusRunning.Click += (s, e) => TriggerStatusChange(NodeStatus.Running);
 
-        _btnStatusPendingCheck = CreateFlatButton("📐측정", Color.FromArgb(217, 119, 6), Color.White);
+        _btnStatusPendingCheck = CreateFlatButton("측정", Color.FromArgb(217, 119, 6), Color.White);
         _btnStatusPendingCheck.Click += (s, e) => TriggerStatusChange(NodeStatus.PendingCheck);
 
-        _btnStatusComplete = CreateFlatButton("⏹완료", Color.FromArgb(2, 132, 199), Color.White);
+        _btnStatusComplete = CreateFlatButton("완료", Color.FromArgb(2, 132, 199), Color.White);
         _btnStatusComplete.Click += (s, e) => TriggerStatusChange(NodeStatus.Completed);
 
-        _btnStatusIssue = CreateFlatButton("🚨이슈", Color.FromArgb(220, 38, 38), Color.White);
+        _btnStatusIssue = CreateFlatButton("이슈", Color.FromArgb(220, 38, 38), Color.White);
         _btnStatusIssue.Click += (s, e) => TriggerStatusChange(NodeStatus.Issue);
 
         row4.Controls.Add(_btnStatusReady, 0, 0);
@@ -258,13 +260,14 @@ public class NodeDetailPanel : UserControl
         pnlSubSection.Controls.Add(pnlSubHeader);
         mainLayout.Controls.Add(pnlSubSection, 0, 7);
 
-        // 8: Action Buttons (Save / Duplicate / Delete)
-        var row8 = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, Margin = new Padding(0, 3, 0, 0) };
-        row8.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 35f));
-        row8.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 35f));
-        row8.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 30f));
+        // 8: Action Buttons (Save / Duplicate / Disconnect / Delete)
+        var row8 = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, Margin = new Padding(0, 3, 0, 0) };
+        row8.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 26f)); // Save
+        row8.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 26f)); // Duplicate
+        row8.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 24f)); // Disconnect
+        row8.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 24f)); // Delete
 
-        _btnSaveDetails = CreateFlatButton("💾 메모 저장", Palette.Bg800, Color.White);
+        _btnSaveDetails = CreateFlatButton("💾 저장", Palette.Bg800, Color.White);
         _btnSaveDetails.Click += (s, e) =>
         {
             if (_currentNode == null)
@@ -276,7 +279,7 @@ public class NodeDetailPanel : UserControl
             MessageBox.Show("노드 정보와 작업 지시 메모가 반영되었습니다.", "저장 완료", MessageBoxButtons.OK, MessageBoxIcon.Information);
         };
 
-        _btnDuplicate = CreateFlatButton("📋 공정 복제", Palette.Bg800, Color.White);
+        _btnDuplicate = CreateFlatButton("📋 복제", Palette.Bg800, Color.White);
         _btnDuplicate.Click += (s, e) =>
         {
             if (_currentNode == null)
@@ -287,7 +290,18 @@ public class NodeDetailPanel : UserControl
             NodeDuplicateRequested?.Invoke(_currentNode);
         };
 
-        _btnDelete = CreateFlatButton("🗑 노드 삭제", Color.FromArgb(185, 28, 28), Color.White);
+        _btnDisconnect = CreateFlatButton("✂ 끊기", Color.FromArgb(30, 41, 59), Palette.Amber);
+        _btnDisconnect.Click += (s, e) =>
+        {
+            if (_currentNode == null)
+            {
+                MessageBox.Show("연결을 끊을 작업 노드를 캔버스에서 먼저 선택해 주세요.", "안내", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            NodeDisconnectRequested?.Invoke(_currentNode);
+        };
+
+        _btnDelete = CreateFlatButton("🗑 삭제", Color.FromArgb(185, 28, 28), Color.White);
         _btnDelete.Click += (s, e) =>
         {
             if (_currentNode == null)
@@ -304,7 +318,8 @@ public class NodeDetailPanel : UserControl
 
         row8.Controls.Add(_btnSaveDetails, 0, 0);
         row8.Controls.Add(_btnDuplicate, 1, 0);
-        row8.Controls.Add(_btnDelete, 2, 0);
+        row8.Controls.Add(_btnDisconnect, 2, 0);
+        row8.Controls.Add(_btnDelete, 3, 0);
         mainLayout.Controls.Add(row8, 0, 8);
 
         Controls.Add(mainLayout);
@@ -462,7 +477,6 @@ public class NodeDetailPanel : UserControl
         _isBinding = true;
         try
         {
-            // KEEP ENABLED SO TEXT AND BUTTONS ARE ALWAYS FULLY READABLE IN DARK THEME!
             _lblOrderAndPart.Text = "작지: [선택 없음] | 부품: [선택 없음]";
             _lblCurrentStatus.Text = "[대기]";
             _lblCurrentStatus.ForeColor = Palette.TextSlate400;
@@ -505,8 +519,8 @@ public class NodeDetailPanel : UserControl
     private string GetStatusText(NodeStatus s) => s switch
     {
         NodeStatus.Ready => "대기",
-        NodeStatus.Running => "가공중",
-        NodeStatus.PendingCheck => "측정대기",
+        NodeStatus.Running => "진행중",
+        NodeStatus.PendingCheck => "측정",
         NodeStatus.Completed => "완료",
         NodeStatus.Issue => "이슈",
         _ => "대기"

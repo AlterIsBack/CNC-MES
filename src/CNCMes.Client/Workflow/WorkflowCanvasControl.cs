@@ -9,7 +9,7 @@ public class WorkflowCanvasControl : UserControl
     public static class Palette
     {
         public static readonly Color CanvasBg = Color.FromArgb(10, 16, 28);       // #0a101c
-        public static readonly Color GridDot = Color.FromArgb(30, 45, 70);         // #1e2d46 (slightly brighter)
+        public static readonly Color GridDot = Color.FromArgb(30, 45, 70);         // #1e2d46
         public static readonly Color NodeBg = Color.FromArgb(17, 26, 44);          // #111a2c
         public static readonly Color NodeBorder = Color.FromArgb(45, 65, 105);     // #2d4169
         public static readonly Color NodeSelected = Color.FromArgb(14, 165, 233);  // Sky #0ea5e9
@@ -29,15 +29,19 @@ public class WorkflowCanvasControl : UserControl
     public List<WorkflowEdge> Edges { get; } = new();
 
     public event Action<WorkflowNode?>? NodeSelected;
+    public event Action<WorkflowEdge?>? EdgeSelected;
     public event Action<WorkflowNode>? NodeDoubleClicked;
     public event Action? WorkflowChanged;
     public event Action? RequestGenerateDefaultWorkflow;
+    public event Action<NodeCategory>? RequestAddQuickNode;
 
     private WorkflowNode? _selectedNode;
+    private WorkflowEdge? _selectedEdge;
     private WorkflowNode? _draggedNode;
     private PointF _dragStartOffset;
     private bool _isPanning;
     private Point _panStartMouse;
+    private Point _mouseDownLocation;
     private PointF _panOffset = new(40, 40);
     private float _zoom = 1.0f;
 
@@ -45,16 +49,18 @@ public class WorkflowCanvasControl : UserControl
     private WorkflowNode? _connectingFromNode;
     private PointF _currentConnectingPoint;
 
-    // Empty state button bounds in screen coordinates
+    // Hit / Click Rectangles for Interactive Elements in Screen Space
     private RectangleF _emptyButtonScreenRect;
+    private RectangleF _selectedEdgeCutButtonScreenRect;
 
     public WorkflowCanvasControl()
     {
         DoubleBuffered = true;
-        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.Selectable, true);
         BackColor = Palette.CanvasBg;
         Font = new Font("맑은 고딕", 9f, FontStyle.Regular);
         Cursor = Cursors.Default;
+        TabStop = true;
     }
 
     public WorkflowNode? SelectedNode
@@ -66,9 +72,45 @@ public class WorkflowCanvasControl : UserControl
             {
                 foreach (var n in Nodes) n.IsSelected = false;
                 _selectedNode = value;
-                if (_selectedNode != null) _selectedNode.IsSelected = true;
+                if (_selectedNode != null)
+                {
+                    _selectedNode.IsSelected = true;
+                    // Deselect edge when node is selected
+                    if (_selectedEdge != null)
+                    {
+                        _selectedEdge.IsSelected = false;
+                        _selectedEdge = null;
+                        EdgeSelected?.Invoke(null);
+                    }
+                }
                 Invalidate();
                 NodeSelected?.Invoke(_selectedNode);
+            }
+        }
+    }
+
+    public WorkflowEdge? SelectedEdge
+    {
+        get => _selectedEdge;
+        set
+        {
+            if (_selectedEdge != value)
+            {
+                foreach (var e in Edges) e.IsSelected = false;
+                _selectedEdge = value;
+                if (_selectedEdge != null)
+                {
+                    _selectedEdge.IsSelected = true;
+                    // Deselect node when edge is selected
+                    if (_selectedNode != null)
+                    {
+                        _selectedNode.IsSelected = false;
+                        _selectedNode = null;
+                        NodeSelected?.Invoke(null);
+                    }
+                }
+                Invalidate();
+                EdgeSelected?.Invoke(_selectedEdge);
             }
         }
     }
@@ -78,6 +120,7 @@ public class WorkflowCanvasControl : UserControl
         Nodes.Clear();
         Edges.Clear();
         _selectedNode = null;
+        _selectedEdge = null;
         Invalidate();
         WorkflowChanged?.Invoke();
     }
@@ -95,8 +138,37 @@ public class WorkflowCanvasControl : UserControl
         Nodes.Remove(node);
         Edges.RemoveAll(e => e.FromNodeId == node.Id || e.ToNodeId == node.Id);
         if (_selectedNode == node) SelectedNode = null;
+        if (_selectedEdge != null && !Edges.Contains(_selectedEdge)) SelectedEdge = null;
         Invalidate();
         WorkflowChanged?.Invoke();
+    }
+
+    public void RemoveEdge(WorkflowEdge edge)
+    {
+        if (Edges.Remove(edge))
+        {
+            if (_selectedEdge == edge) SelectedEdge = null;
+            Invalidate();
+            WorkflowChanged?.Invoke();
+        }
+    }
+
+    public void RemoveEdgesForNode(WorkflowNode node, bool incoming = true, bool outgoing = true)
+    {
+        int removed = 0;
+        if (incoming && outgoing)
+            removed = Edges.RemoveAll(e => e.FromNodeId == node.Id || e.ToNodeId == node.Id);
+        else if (incoming)
+            removed = Edges.RemoveAll(e => e.ToNodeId == node.Id);
+        else if (outgoing)
+            removed = Edges.RemoveAll(e => e.FromNodeId == node.Id);
+
+        if (removed > 0)
+        {
+            if (_selectedEdge != null && !Edges.Contains(_selectedEdge)) _selectedEdge = null;
+            Invalidate();
+            WorkflowChanged?.Invoke();
+        }
     }
 
     public void AddEdge(string fromId, string toId, EdgeType type = EdgeType.Sequence, string label = "")
@@ -107,7 +179,8 @@ public class WorkflowCanvasControl : UserControl
         // Prevent simple cycles
         if (Edges.Any(e => e.FromNodeId == toId && e.ToNodeId == fromId)) return;
 
-        Edges.Add(new WorkflowEdge { FromNodeId = fromId, ToNodeId = toId, Type = type, Label = label });
+        var edge = new WorkflowEdge { FromNodeId = fromId, ToNodeId = toId, Type = type, Label = label };
+        Edges.Add(edge);
         Invalidate();
         WorkflowChanged?.Invoke();
     }
@@ -123,96 +196,68 @@ public class WorkflowCanvasControl : UserControl
     {
         if (Nodes.Count == 0) return;
 
-        // Build adjacency map & in-degree for topological-like layering
-        var nodeMap = Nodes.ToDictionary(n => n.Id, n => n);
-        var inDegree = Nodes.ToDictionary(n => n.Id, n => 0);
-        var adj = Nodes.ToDictionary(n => n.Id, n => new List<string>());
-
+        var inDegree = Nodes.ToDictionary(n => n.Id, _ => 0);
         foreach (var edge in Edges)
         {
-            if (nodeMap.ContainsKey(edge.FromNodeId) && nodeMap.ContainsKey(edge.ToNodeId))
-            {
-                adj[edge.FromNodeId].Add(edge.ToNodeId);
+            if (inDegree.ContainsKey(edge.ToNodeId))
                 inDegree[edge.ToNodeId]++;
-            }
         }
 
-        // Assign levels (BFS)
+        var queue = new Queue<string>(Nodes.Where(n => inDegree[n.Id] == 0).Select(n => n.Id));
+        if (queue.Count == 0 && Nodes.Count > 0)
+            queue.Enqueue(Nodes[0].Id);
+
         var levels = new Dictionary<string, int>();
-        var queue = new Queue<string>();
-
-        foreach (var kvp in inDegree)
-        {
-            if (kvp.Value == 0)
-            {
-                levels[kvp.Key] = 0;
-                queue.Enqueue(kvp.Key);
-            }
-        }
-
-        // If cycle or disconnected, default level 0
-        foreach (var n in Nodes)
-        {
-            if (!levels.ContainsKey(n.Id))
-            {
-                levels[n.Id] = 0;
-                queue.Enqueue(n.Id);
-            }
-        }
-
         while (queue.Count > 0)
         {
-            string curr = queue.Dequeue();
-            int currLevel = levels[curr];
+            var currId = queue.Dequeue();
+            int currLevel = levels.TryGetValue(currId, out int lvl) ? lvl : 0;
 
-            foreach (var neighbor in adj[curr])
+            foreach (var edge in Edges.Where(e => e.FromNodeId == currId))
             {
-                if (!levels.ContainsKey(neighbor) || levels[neighbor] < currLevel + 1)
+                int nextLevel = currLevel + 1;
+                if (!levels.ContainsKey(edge.ToNodeId) || levels[edge.ToNodeId] < nextLevel)
                 {
-                    levels[neighbor] = currLevel + 1;
-                    queue.Enqueue(neighbor);
+                    levels[edge.ToNodeId] = nextLevel;
+                    queue.Enqueue(edge.ToNodeId);
                 }
             }
         }
 
-        // Group by level and assign coordinates
-        var levelGroups = Nodes.GroupBy(n => levels.TryGetValue(n.Id, out var lv) ? lv : 0)
-                               .OrderBy(g => g.Key)
-                               .ToList();
+        foreach (var node in Nodes)
+        {
+            if (!levels.ContainsKey(node.Id))
+                levels[node.Id] = 0;
+        }
 
+        var levelGroups = Nodes.GroupBy(n => levels[n.Id]).OrderBy(g => g.Key);
         float startX = 60f;
-        float startY = 80f;
-        float xSpacing = 265f;
-        float ySpacing = 130f;
+        float spacingX = 260f;
+        float spacingY = 140f;
 
         foreach (var group in levelGroups)
         {
-            int levelIndex = group.Key;
+            int level = group.Key;
             var nodesInLevel = group.ToList();
 
             for (int i = 0; i < nodesInLevel.Count; i++)
             {
-                var node = nodesInLevel[i];
-                node.X = startX + levelIndex * xSpacing;
-                
-                // If it is collaboration or issue, offset downwards for clear visibility
-                if (node.Category == NodeCategory.Collaboration || node.Category == NodeCategory.Issue)
-                {
-                    node.Y = startY + (i + 1) * ySpacing + 20f;
-                }
-                else
-                {
-                    node.Y = startY + i * ySpacing;
-                }
+                var n = nodesInLevel[i];
+                n.X = startX + level * spacingX;
+                n.Y = 80f + i * spacingY;
             }
         }
 
-        Invalidate();
+        ResetView();
         WorkflowChanged?.Invoke();
     }
 
+    // =========================================================================
+    // PAINTING / RENDERING
+    // =========================================================================
     protected override void OnPaint(PaintEventArgs e)
     {
+        base.OnPaint(e);
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
@@ -227,7 +272,7 @@ public class WorkflowCanvasControl : UserControl
         DrawConnectingLine(g);
         DrawNodes(g);
 
-        // Reset Transform for HUD / Empty Guide Overlay
+        // Reset Transform for HUD / Empty Guide / Cut Button Overlay
         g.Transform = originalTransform;
 
         if (Nodes.Count == 0)
@@ -235,6 +280,7 @@ public class WorkflowCanvasControl : UserControl
             DrawEmptyCanvasGuide(g);
         }
 
+        DrawCutButtonOverlay(g);
         DrawHudOverlay(g);
     }
 
@@ -247,61 +293,53 @@ public class WorkflowCanvasControl : UserControl
 
         var boxRect = new RectangleF(boxX, boxY, boxW, boxH);
 
-        // Backdrop
-        using (var brush = new SolidBrush(Color.FromArgb(235, 15, 23, 42))) // Dark slate #0f172a
-        using (var pen = new Pen(Color.FromArgb(180, 56, 189, 248), 1.5f))
-        {
-            DrawRoundedRectangle(g, brush, pen, boxRect, 10f);
-        }
+        using var bgBrush = new SolidBrush(Color.FromArgb(235, 15, 23, 42));
+        using var borderPen = new Pen(Palette.CatPrep, 1.5f);
+        DrawRoundedRectangle(g, bgBrush, borderPen, boxRect, 10f);
 
-        // Icon + Title
-        using (var iconFont = new Font("Segoe UI Symbol", 16f, FontStyle.Bold))
-        using (var titleFont = new Font("맑은 고딕", 11.5f, FontStyle.Bold))
-        using (var subFont = new Font("맑은 고딕", 9f, FontStyle.Regular))
-        using (var textBrush = new SolidBrush(Palette.TextWhite))
-        using (var mutedBrush = new SolidBrush(Palette.TextMuted))
-        {
-            var sf = new StringFormat { Alignment = StringAlignment.Center };
-            g.DrawString("📋 작업지시서와 부품을 선택한 뒤 기본 워크플로우를 생성하세요.", titleFont, textBrush, new PointF(Width / 2f, boxY + 24f), sf);
-            g.DrawString("선택된 부품의 공정 단계에 맞추어 표준 CNC 작업 흐름(황삭→측정→정삭→세척)이 구성됩니다.", subFont, mutedBrush, new PointF(Width / 2f, boxY + 56f), sf);
-        }
+        using var fontIcon = new Font("Segoe UI Symbol", 20f);
+        using var fontTitle = new Font("맑은 고딕", 12f, FontStyle.Bold);
+        using var fontSub = new Font("맑은 고딕", 9f);
+        using var brushSky = new SolidBrush(Palette.CatPrep);
+        using var brushWhite = new SolidBrush(Palette.TextWhite);
+        using var brushMuted = new SolidBrush(Palette.TextMuted);
 
-        // Action Button: [ ⚡ 기본 워크플로우 생성 ]
+        g.DrawString("⚡", fontIcon, brushSky, boxX + 24, boxY + 22);
+        g.DrawString("기본 공정 워크플로우를 자동 생성하시겠습니까?", fontTitle, brushWhite, boxX + 65, boxY + 24);
+        g.DrawString("좌측에서 작업지시서와 부품을 선택한 후 아래 버튼을 클릭하면 표준 가공 공정이 배치됩니다.", fontSub, brushMuted, boxX + 65, boxY + 54);
+
         float btnW = 240f;
         float btnH = 38f;
-        float btnX = (Width - btnW) / 2f;
+        float btnX = boxX + (boxW - btnW) / 2f;
         float btnY = boxY + 98f;
-
         _emptyButtonScreenRect = new RectangleF(btnX, btnY, btnW, btnH);
 
-        using (var btnBrush = new SolidBrush(Color.FromArgb(16, 185, 129))) // Emerald green
-        using (var btnPen = new Pen(Color.FromArgb(52, 211, 153), 1.5f))
-        using (var font = new Font("맑은 고딕", 9.8f, FontStyle.Bold))
-        using (var brush = new SolidBrush(Color.White))
-        {
-            DrawRoundedRectangle(g, btnBrush, btnPen, _emptyButtonScreenRect, 6f);
-            var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-            g.DrawString("⚡ 기본 워크플로우 생성", font, brush, _emptyButtonScreenRect, sf);
-        }
+        using var btnBg = new SolidBrush(Palette.CatMach);
+        using var btnBorder = new Pen(Color.FromArgb(100, 255, 255, 255), 1.2f);
+        DrawRoundedRectangle(g, btnBg, btnBorder, _emptyButtonScreenRect, 6f);
+
+        using var fontBtn = new Font("맑은 고딕", 9.5f, FontStyle.Bold);
+        var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+        g.DrawString("⚡ 기본 워크플로우 생성", fontBtn, Brushes.White, _emptyButtonScreenRect, sf);
     }
 
     private void DrawGrid(Graphics g)
     {
-        float left = (-_panOffset.X) / _zoom;
-        float top = (-_panOffset.Y) / _zoom;
-        float right = (Width - _panOffset.X) / _zoom;
-        float bottom = (Height - _panOffset.Y) / _zoom;
+        float dotSpacing = 24f;
+        float startX = -_panOffset.X / _zoom;
+        float startY = -_panOffset.Y / _zoom;
+        float endX = startX + Width / _zoom;
+        float endY = startY + Height / _zoom;
 
-        float gridSpacing = 40f;
-        int startX = (int)(left / gridSpacing) * (int)gridSpacing - (int)gridSpacing;
-        int startY = (int)(top / gridSpacing) * (int)gridSpacing - (int)gridSpacing;
+        float firstX = (float)Math.Floor(startX / dotSpacing) * dotSpacing;
+        float firstY = (float)Math.Floor(startY / dotSpacing) * dotSpacing;
 
-        using var dotBrush = new SolidBrush(Palette.GridDot);
-        for (float x = startX; x < right + gridSpacing; x += gridSpacing)
+        using var brush = new SolidBrush(Palette.GridDot);
+        for (float x = firstX; x <= endX; x += dotSpacing)
         {
-            for (float y = startY; y < bottom + gridSpacing; y += gridSpacing)
+            for (float y = firstY; y <= endY; y += dotSpacing)
             {
-                g.FillRectangle(dotBrush, x - 1, y - 1, 2, 2);
+                g.FillRectangle(brush, x, y, 1.5f, 1.5f);
             }
         }
     }
@@ -309,6 +347,7 @@ public class WorkflowCanvasControl : UserControl
     private void DrawEdges(Graphics g)
     {
         var nodeMap = Nodes.ToDictionary(n => n.Id, n => n);
+        _selectedEdgeCutButtonScreenRect = RectangleF.Empty;
 
         foreach (var edge in Edges)
         {
@@ -329,26 +368,36 @@ public class WorkflowCanvasControl : UserControl
             float edgeWidth;
             DashStyle dash = DashStyle.Solid;
 
-            switch (edge.Type)
+            bool isSelected = edge == _selectedEdge;
+
+            if (isSelected)
             {
-                case EdgeType.Parallel:
-                    edgeColor = Color.FromArgb(220, 56, 189, 248); // Sky
-                    edgeWidth = 2.2f;
-                    dash = DashStyle.Dash;
-                    break;
-                case EdgeType.Delegation:
-                    edgeColor = Color.FromArgb(230, 168, 85, 247); // Purple
-                    edgeWidth = 2.4f;
-                    dash = DashStyle.DashDot;
-                    break;
-                case EdgeType.IssueLink:
-                    edgeColor = Color.FromArgb(230, 239, 68, 68); // Red
-                    edgeWidth = 2.2f;
-                    break;
-                default:
-                    edgeColor = Color.FromArgb(190, 100, 140, 180); // Classic Blue/Slate
-                    edgeWidth = 2.0f;
-                    break;
+                edgeColor = Color.FromArgb(250, 204, 21); // Amber / Yellow Highlight
+                edgeWidth = 3.6f;
+            }
+            else
+            {
+                switch (edge.Type)
+                {
+                    case EdgeType.Parallel:
+                        edgeColor = Color.FromArgb(220, 56, 189, 248); // Sky
+                        edgeWidth = 2.2f;
+                        dash = DashStyle.Dash;
+                        break;
+                    case EdgeType.Delegation:
+                        edgeColor = Color.FromArgb(230, 168, 85, 247); // Purple
+                        edgeWidth = 2.4f;
+                        dash = DashStyle.DashDot;
+                        break;
+                    case EdgeType.IssueLink:
+                        edgeColor = Color.FromArgb(230, 239, 68, 68); // Red
+                        edgeWidth = 2.2f;
+                        break;
+                    default:
+                        edgeColor = Color.FromArgb(190, 100, 140, 180); // Classic Slate Blue
+                        edgeWidth = 2.0f;
+                        break;
+                }
             }
 
             using var pen = new Pen(edgeColor, edgeWidth) { DashStyle = dash };
@@ -359,16 +408,25 @@ public class WorkflowCanvasControl : UserControl
             // Draw arrow head at target
             DrawArrowHead(g, c2, p2, edgeColor);
 
+            // Calculate midpoint on bezier curve (t = 0.5)
+            float t = 0.5f;
+            float it = 1f - t;
+            float midX = it * it * it * p1.X + 3 * it * it * t * c1.X + 3 * it * t * t * c2.X + t * t * t * p2.X;
+            float midY = it * it * it * p1.Y + 3 * it * it * t * c1.Y + 3 * it * t * t * c2.Y + t * t * t * p2.Y;
+
+            if (isSelected)
+            {
+                // Save screen position of the cut button for click hit-testing
+                PointF screenPt = WorldToScreen(new PointF(midX, midY));
+                _selectedEdgeCutButtonScreenRect = new RectangleF(screenPt.X - 60f, screenPt.Y - 14f, 120f, 28f);
+            }
+
             // Draw sub-worker movement / machine transfer direction badge along edge
             bool isDiffMachine = !string.IsNullOrEmpty(fromNode.MachineId) && !string.IsNullOrEmpty(toNode.MachineId) && !fromNode.MachineId.Equals(toNode.MachineId, StringComparison.OrdinalIgnoreCase);
             bool isDelegation = edge.Type == EdgeType.Delegation;
 
-            if (isDiffMachine || isDelegation)
+            if (!isSelected && (isDiffMachine || isDelegation))
             {
-                float t = 0.5f;
-                float midX = (1 - t) * (1 - t) * (1 - t) * p1.X + 3 * (1 - t) * (1 - t) * t * c1.X + 3 * (1 - t) * t * t * c2.X + t * t * t * p2.X;
-                float midY = (1 - t) * (1 - t) * (1 - t) * p1.Y + 3 * (1 - t) * (1 - t) * t * c1.Y + 3 * (1 - t) * t * t * c2.Y + t * t * t * p2.Y;
-
                 bool isSubworker = isDelegation || toNode.Category == NodeCategory.Collaboration || fromNode.Category == NodeCategory.Collaboration;
                 string badgeText = isDiffMachine
                     ? (isSubworker ? $"👥 서브인원 이동: {fromNode.MachineId} ➔ {toNode.MachineId}" : $"🔄 설비이송: {fromNode.MachineId} ➔ {toNode.MachineId}")
@@ -390,6 +448,21 @@ public class WorkflowCanvasControl : UserControl
                 var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
                 g.DrawString(badgeText, fontBadge, textB, badgeRect, sf);
             }
+        }
+    }
+
+    private void DrawCutButtonOverlay(Graphics g)
+    {
+        if (_selectedEdge != null && !_selectedEdgeCutButtonScreenRect.IsEmpty)
+        {
+            using var bgBrush = new SolidBrush(Color.FromArgb(245, 220, 38, 38)); // High contrast red
+            using var borderPen = new Pen(Color.White, 1.5f);
+            DrawRoundedRectangle(g, bgBrush, borderPen, _selectedEdgeCutButtonScreenRect, 6f);
+
+            using var font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
+            using var brush = new SolidBrush(Color.White);
+            var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+            g.DrawString("✂ 연결 끊기 (Del)", font, brush, _selectedEdgeCutButtonScreenRect, sf);
         }
     }
 
@@ -418,212 +491,178 @@ public class WorkflowCanvasControl : UserControl
         PointF p1 = _connectingFromNode.OutputAnchor;
         PointF p2 = _currentConnectingPoint;
 
-        float dx = Math.Abs(p2.X - p1.X) * 0.5f;
-        float ctrlDist = Math.Max(40f, dx);
-
-        PointF c1 = new(p1.X + ctrlDist, p1.Y);
-        PointF c2 = new(p2.X - ctrlDist, p2.Y);
-
-        using var pen = new Pen(Color.FromArgb(220, 14, 165, 233), 2.2f) { DashStyle = DashStyle.Dash };
-        using var path = new GraphicsPath();
-        path.AddBezier(p1, c1, c2, p2);
-        g.DrawPath(pen, path);
-
-        DrawArrowHead(g, c2, p2, Color.FromArgb(220, 14, 165, 233));
+        using var pen = new Pen(Palette.CatPrep, 2f) { DashStyle = DashStyle.Dash };
+        g.DrawLine(pen, p1, p2);
     }
 
     private void DrawNodes(Graphics g)
     {
-        using var fontTitle = new Font("맑은 고딕", 9.2f, FontStyle.Bold);
-        using var fontCat = new Font("맑은 고딕", 7.8f, FontStyle.Bold);
-        using var fontMeta = new Font("맑은 고딕", 7.5f, FontStyle.Regular);
-
         foreach (var node in Nodes)
         {
-            var bounds = node.Bounds;
-            Color accentColor = GetCategoryColor(node.Category);
-
-            // 1. Draw Glow if running / issue / selected
-            if (node.Status == NodeStatus.Running)
-            {
-                using var glowPen = new Pen(Color.FromArgb(70, 16, 185, 129), 8f);
-                DrawRoundedRectangle(g, null, glowPen, RectangleF.Inflate(bounds, 4, 4), 10f);
-            }
-            else if (node.Status == NodeStatus.Issue)
-            {
-                using var glowPen = new Pen(Color.FromArgb(70, 239, 68, 68), 8f);
-                DrawRoundedRectangle(g, null, glowPen, RectangleF.Inflate(bounds, 4, 4), 10f);
-            }
-            else if (node.IsSelected)
-            {
-                using var glowPen = new Pen(Color.FromArgb(80, 14, 165, 233), 6f);
-                DrawRoundedRectangle(g, null, glowPen, RectangleF.Inflate(bounds, 3, 3), 10f);
-            }
-
-            // 2. Draw Card Body
-            using var bgBrush = new SolidBrush(Palette.NodeBg);
-            Color borderColor = node.IsSelected ? Palette.NodeSelected : (node.Status == NodeStatus.Issue ? Palette.CatIssue : Palette.NodeBorder);
-            float borderWidth = node.IsSelected ? 2.0f : 1.2f;
-            using var borderPen = new Pen(borderColor, borderWidth);
-
-            DrawRoundedRectangle(g, bgBrush, borderPen, bounds, 8f);
-
-            // 3. Category Top Pill/Bar
-            var pillRect = new RectangleF(bounds.X + 8, bounds.Y + 8, 54, 17);
-            using (var catBrush = new SolidBrush(Color.FromArgb(35, accentColor)))
-            using (var catBorderPen = new Pen(accentColor, 1f))
-            {
-                DrawRoundedRectangle(g, catBrush, catBorderPen, pillRect, 4f);
-            }
-
-            using (var catTextBrush = new SolidBrush(accentColor))
-            {
-                var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-                g.DrawString($"[{GetCategoryKorean(node.Category)}]", fontCat, catTextBrush, pillRect, sf);
-            }
-
-            // Machine Pill (Color-coded by equipment with icon)
-            if (!string.IsNullOrEmpty(node.MachineId))
-            {
-                var machRect = new RectangleF(bounds.Right - 68, bounds.Y + 8, 58, 18);
-                Color machBgColor = node.MachineId switch
-                {
-                    "R01" => Color.FromArgb(45, 14, 165, 233), // Sky
-                    "R02" => Color.FromArgb(45, 16, 185, 129), // Emerald
-                    "R03" or "R04" or "R05" => Color.FromArgb(45, 59, 130, 246), // Blue
-                    "측정실" => Color.FromArgb(50, 245, 158, 11), // Amber
-                    "세척실" => Color.FromArgb(45, 99, 102, 241), // Indigo
-                    "품질팀" => Color.FromArgb(45, 217, 70, 239), // Fuchsia
-                    _ => Color.FromArgb(40, 148, 163, 184)
-                };
-                Color machBorderColor = node.MachineId switch
-                {
-                    "R01" => Color.FromArgb(140, 14, 165, 233),
-                    "R02" => Color.FromArgb(140, 16, 185, 129),
-                    "측정실" => Color.FromArgb(160, 245, 158, 11),
-                    "세척실" => Color.FromArgb(140, 99, 102, 241),
-                    "품질팀" => Color.FromArgb(140, 217, 70, 239),
-                    _ => Color.FromArgb(100, 148, 163, 184)
-                };
-                using var machBg = new SolidBrush(machBgColor);
-                using var machPen = new Pen(machBorderColor, 1.2f);
-                DrawRoundedRectangle(g, machBg, machPen, machRect, 4f);
-
-                using var machTextBrush = new SolidBrush(Color.White);
-                var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-                g.DrawString($"⚙ {node.MachineId}", fontMeta, machTextBrush, machRect, sf);
-            }
-
-            // 4. Title Text
-            using (var titleBrush = new SolidBrush(Palette.TextWhite))
-            {
-                var titleRect = new RectangleF(bounds.X + 10, bounds.Y + 29, bounds.Width - 20, 22);
-                var sf = new StringFormat { Trimming = StringTrimming.EllipsisCharacter, LineAlignment = StringAlignment.Center };
-                g.DrawString(node.Title, fontTitle, titleBrush, titleRect, sf);
-            }
-
-            // 5. Footer (Assignee & Status badge)
-            using (var metaBrush = new SolidBrush(Palette.TextMuted))
-            {
-                string assigneeText = string.IsNullOrEmpty(node.Assignee) ? "담당: 미배정" : $"담당: {node.Assignee}";
-                g.DrawString(assigneeText, fontMeta, metaBrush, bounds.X + 10, bounds.Y + 54);
-            }
-
-            // Status Badge on bottom right
-            DrawStatusBadge(g, node, bounds.Right - 52, bounds.Y + 53, 44, 18);
-
-            // 6. Output & Input Connector Anchors
-            DrawPortAnchor(g, node.InputAnchor, false);
-            DrawPortAnchor(g, node.OutputAnchor, true);
+            DrawSingleNode(g, node);
         }
     }
 
-    private void DrawStatusBadge(Graphics g, WorkflowNode node, float x, float y, float w, float h)
+    private void DrawSingleNode(Graphics g, WorkflowNode node)
     {
-        var rect = new RectangleF(x, y, w, h);
-        Color badgeBg;
-        Color badgeFg;
-        string statusText;
+        var rect = node.Bounds;
+        Color catColor = GetCategoryColor(node.Category);
 
-        switch (node.Status)
+        using (var bgBrush = new SolidBrush(Palette.NodeBg))
+        using (var borderPen = new Pen(node.IsSelected ? Palette.NodeSelected : Palette.NodeBorder, node.IsSelected ? 2.2f : 1f))
         {
-            case NodeStatus.Running:
-                badgeBg = Color.FromArgb(40, 16, 185, 129);
-                badgeFg = Color.FromArgb(52, 211, 153);
-                statusText = "가공중";
-                break;
-            case NodeStatus.PendingCheck:
-                badgeBg = Color.FromArgb(40, 245, 158, 11);
-                badgeFg = Color.FromArgb(251, 191, 36);
-                statusText = "측정";
-                break;
-            case NodeStatus.Completed:
-                badgeBg = Color.FromArgb(40, 14, 165, 233);
-                badgeFg = Color.FromArgb(56, 189, 248);
-                statusText = "완료";
-                break;
-            case NodeStatus.Issue:
-                badgeBg = Color.FromArgb(45, 239, 68, 68);
-                badgeFg = Color.FromArgb(248, 113, 113);
-                statusText = "이슈";
-                break;
-            default:
-                badgeBg = Color.FromArgb(30, 255, 255, 255);
-                badgeFg = Palette.TextMuted;
-                statusText = "대기";
-                break;
+            DrawRoundedRectangle(g, bgBrush, borderPen, rect, 8f);
         }
 
-        using var bgBrush = new SolidBrush(badgeBg);
-        using var fgBrush = new SolidBrush(badgeFg);
-        using var pen = new Pen(badgeFg, 0.8f);
-        using var font = new Font("맑은 고딕", 7.2f, FontStyle.Bold);
+        // Header Category Badge
+        var badgeRect = new RectangleF(rect.X + 8, rect.Y + 8, 48, 18);
+        using (var badgeBg = new SolidBrush(Color.FromArgb(40, catColor.R, catColor.G, catColor.B)))
+        using (var badgePen = new Pen(catColor, 1f))
+        {
+            DrawRoundedRectangle(g, badgeBg, badgePen, badgeRect, 4f);
+        }
+        using (var fontBadge = new Font("맑은 고딕", 7.5f, FontStyle.Bold))
+        using (var brushBadge = new SolidBrush(catColor))
+        {
+            var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+            g.DrawString($"[{GetCategoryKorean(node.Category)}]", fontBadge, brushBadge, badgeRect, sf);
+        }
 
-        DrawRoundedRectangle(g, bgBrush, pen, rect, 3f);
-        var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-        g.DrawString(statusText, font, fgBrush, rect, sf);
+        // Machine Badge (e.g. ⚙ R01)
+        string machText = string.IsNullOrEmpty(node.MachineId) ? "⚙ R01" : $"⚙ {node.MachineId}";
+        using var fontMach = new Font("Consolas", 7.5f, FontStyle.Bold);
+        var machSize = g.MeasureString(machText, fontMach);
+        var machRect = new RectangleF(rect.Right - machSize.Width - 14, rect.Y + 8, machSize.Width + 6, 18);
+
+        Color machBg = node.MachineId switch
+        {
+            "R01" => Color.FromArgb(40, 16, 185, 129),
+            "R02" => Color.FromArgb(40, 14, 165, 233),
+            "R03" => Color.FromArgb(40, 245, 158, 11),
+            "측정실" => Color.FromArgb(50, 245, 158, 11),
+            "세척실" => Color.FromArgb(50, 99, 102, 241),
+            "품질팀" => Color.FromArgb(50, 168, 85, 247),
+            _ => Color.FromArgb(40, 148, 163, 184)
+        };
+        Color machBorder = node.MachineId switch
+        {
+            "R01" => Palette.CatMach,
+            "R02" => Palette.CatPrep,
+            "R03" => Palette.CatInsp,
+            "측정실" => Palette.CatInsp,
+            "세척실" => Palette.CatPost,
+            "품질팀" => Palette.CatCollab,
+            _ => Palette.TextMuted
+        };
+
+        using (var bBg = new SolidBrush(machBg))
+        using (var bPen = new Pen(machBorder, 1f))
+        {
+            DrawRoundedRectangle(g, bBg, bPen, machRect, 4f);
+        }
+        using (var bText = new SolidBrush(machBorder))
+        {
+            var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+            g.DrawString(machText, fontMach, bText, machRect, sf);
+        }
+
+        // Title
+        using (var fontTitle = new Font("맑은 고딕", 8.8f, FontStyle.Bold))
+        using (var brushTitle = new SolidBrush(Palette.TextWhite))
+        {
+            var titleRect = new RectangleF(rect.X + 8, rect.Y + 31, rect.Width - 16, 20);
+            var sf = new StringFormat { Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap };
+            g.DrawString(node.Title, fontTitle, brushTitle, titleRect, sf);
+        }
+
+        // Assignee & Subworker Footnote
+        string workerText = string.IsNullOrEmpty(node.Assignee) ? "담당: 미정" : $"담당: {node.Assignee}";
+        if (!string.IsNullOrEmpty(node.SubWorkerName) && node.Category == NodeCategory.Collaboration)
+            workerText = $"서브: {node.SubWorkerName}";
+
+        using (var fontWorker = new Font("맑은 고딕", 7.5f))
+        using (var brushWorker = new SolidBrush(Palette.TextMuted))
+        {
+            g.DrawString(workerText, fontWorker, brushWorker, rect.X + 8, rect.Y + 54);
+        }
+
+        // Status Badge (대기, 진행중, 측정, 완료, 이슈)
+        string statusText = node.Status switch
+        {
+            NodeStatus.Ready => "대기",
+            NodeStatus.Running => "진행중",
+            NodeStatus.PendingCheck => "측정",
+            NodeStatus.Completed => "완료",
+            NodeStatus.Issue => "이슈",
+            _ => "대기"
+        };
+        Color statusBg = node.Status switch
+        {
+            NodeStatus.Ready => Color.FromArgb(42, 59, 76),
+            NodeStatus.Running => Color.FromArgb(5, 150, 105),
+            NodeStatus.PendingCheck => Color.FromArgb(217, 119, 6),
+            NodeStatus.Completed => Color.FromArgb(2, 132, 199),
+            NodeStatus.Issue => Color.FromArgb(220, 38, 38),
+            _ => Color.FromArgb(42, 59, 76)
+        };
+
+        var statusRect = new RectangleF(rect.Right - 44, rect.Y + 52, 36, 18);
+        using (var sBg = new SolidBrush(statusBg))
+        using (var sPen = new Pen(Color.FromArgb(80, 255, 255, 255), 1f))
+        {
+            DrawRoundedRectangle(g, sBg, sPen, statusRect, 4f);
+        }
+        using (var sText = new SolidBrush(Color.White))
+        using (var fontS = new Font("맑은 고딕", 7.2f, FontStyle.Bold))
+        {
+            var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+            g.DrawString(statusText, fontS, sText, statusRect, sf);
+        }
+
+        // Input & Output Anchors (Connection Handles)
+        DrawAnchor(g, node.InputAnchor, false);
+        DrawAnchor(g, node.OutputAnchor, true);
     }
 
-    private void DrawPortAnchor(Graphics g, PointF p, bool isOutput)
+    private void DrawAnchor(Graphics g, PointF pt, bool isOutput)
     {
-        float r = 5.5f;
-        var rect = new RectangleF(p.X - r, p.Y - r, r * 2, r * 2);
+        float size = 8f;
+        var r = new RectangleF(pt.X - size / 2f, pt.Y - size / 2f, size, size);
 
-        using var brush = new SolidBrush(isOutput ? Palette.NodeSelected : Color.FromArgb(52, 211, 153));
-        using var pen = new Pen(Color.FromArgb(15, 23, 42), 1.5f);
-
-        g.FillEllipse(brush, rect);
-        g.DrawEllipse(pen, rect);
+        using var brush = new SolidBrush(isOutput ? Palette.CatPrep : Palette.TextMuted);
+        using var pen = new Pen(Palette.CanvasBg, 1.5f);
+        g.FillEllipse(brush, r);
+        g.DrawEllipse(pen, r);
     }
 
     private void DrawHudOverlay(Graphics g)
     {
-        // Bottom Right HUD: Node Count & Zoom
-        string hudText = $"노드: {Nodes.Count}개 | 연결: {Edges.Count}개 | 줌: {(int)(_zoom * 100)}%";
-        using var font = new Font("Consolas", 8.2f, FontStyle.Regular);
-        using var brush = new SolidBrush(Palette.TextMuted);
-
+        string hudText = $"노드: {Nodes.Count}개 | 연결: {Edges.Count}개 | 줌: {(int)(_zoom * 100)}% | [연결선 클릭 후 Del 키로 끊기]";
+        using var font = new Font("Consolas", 8.2f);
         var size = g.MeasureString(hudText, font);
-        g.DrawString(hudText, font, brush, Width - size.Width - 12, Height - size.Height - 8);
 
-        // Bottom Left HUD: Mouse Help
-        string helpText = "마우스 드래그: 이동 | 우클릭 드래그: 팬(화면 이동) | 휠: 줌 | 우측 원 드래그: 연결선 생성";
-        using var fontHelp = new Font("맑은 고딕", 7.5f, FontStyle.Regular);
-        g.DrawString(helpText, fontHelp, brush, 12, Height - 22);
+        float x = Width - size.Width - 14;
+        float y = Height - size.Height - 10;
+
+        using var bg = new SolidBrush(Color.FromArgb(160, 10, 16, 28));
+        g.FillRectangle(bg, x - 4, y - 2, size.Width + 8, size.Height + 4);
+
+        using var brush = new SolidBrush(Palette.TextMuted);
+        g.DrawString(hudText, font, brush, x, y);
     }
 
-    private void DrawRoundedRectangle(Graphics g, Brush? brush, Pen? pen, RectangleF rect, float radius)
+    private static void DrawRoundedRectangle(Graphics g, Brush brush, Pen pen, RectangleF r, float radius)
     {
         using var path = new GraphicsPath();
-        float diameter = radius * 2f;
-        path.AddArc(rect.X, rect.Y, diameter, diameter, 180, 90);
-        path.AddArc(rect.Right - diameter, rect.Y, diameter, diameter, 270, 90);
-        path.AddArc(rect.Right - diameter, rect.Bottom - diameter, diameter, diameter, 0, 90);
-        path.AddArc(rect.X, rect.Bottom - diameter, diameter, diameter, 90, 90);
+        float d = radius * 2f;
+        path.AddArc(r.X, r.Y, d, d, 180, 90);
+        path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+        path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+        path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
         path.CloseFigure();
 
-        if (brush != null) g.FillPath(brush, path);
-        if (pen != null) g.DrawPath(pen, path);
+        g.FillPath(brush, path);
+        g.DrawPath(pen, path);
     }
 
     public static Color GetCategoryColor(NodeCategory cat) => cat switch
@@ -649,16 +688,44 @@ public class WorkflowCanvasControl : UserControl
     };
 
     // =========================================================================
-    // MOUSE INTERACTION (Pan, Zoom, Drag, Connect)
+    // MOUSE & KEYBOARD INTERACTION (Pan, Zoom, Drag, Connect, Cut/Delete)
     // =========================================================================
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (e.KeyCode == Keys.Delete || e.KeyCode == Keys.Back)
+        {
+            if (_selectedEdge != null)
+            {
+                RemoveEdge(_selectedEdge);
+                e.Handled = true;
+            }
+            else if (_selectedNode != null)
+            {
+                RemoveNode(_selectedNode);
+                e.Handled = true;
+            }
+        }
+    }
+
     protected override void OnMouseDown(MouseEventArgs e)
     {
         base.OnMouseDown(e);
+        Focus(); // Ensure canvas captures keyboard focus for Delete key
 
-        // Check if clicked the Empty Guide Button
+        _mouseDownLocation = e.Location;
+
+        // 1. Check if clicked the Empty Guide Button
         if (Nodes.Count == 0 && _emptyButtonScreenRect.Contains(e.Location))
         {
             RequestGenerateDefaultWorkflow?.Invoke();
+            return;
+        }
+
+        // 2. Check if clicked the Cut Button on a Selected Edge
+        if (_selectedEdge != null && !_selectedEdgeCutButtonScreenRect.IsEmpty && _selectedEdgeCutButtonScreenRect.Contains(e.Location))
+        {
+            RemoveEdge(_selectedEdge);
             return;
         }
 
@@ -693,11 +760,20 @@ public class WorkflowCanvasControl : UserControl
                 SelectedNode = hitNode;
                 _draggedNode = hitNode;
                 _dragStartOffset = new PointF(worldPt.X - hitNode.X, worldPt.Y - hitNode.Y);
+                return;
             }
-            else
+
+            // 3. Check if clicking an edge (Hit test)
+            var hitEdge = HitTestEdge(worldPt);
+            if (hitEdge != null)
             {
-                SelectedNode = null;
+                SelectedEdge = hitEdge;
+                return;
             }
+
+            // Clicked empty background
+            SelectedNode = null;
+            SelectedEdge = null;
         }
     }
 
@@ -734,6 +810,12 @@ public class WorkflowCanvasControl : UserControl
         }
 
         // Hover cursor check
+        if (_selectedEdge != null && _selectedEdgeCutButtonScreenRect.Contains(e.Location))
+        {
+            Cursor = Cursors.Hand;
+            return;
+        }
+
         bool nearPort = Nodes.Any(n => IsPointNear(worldPt, n.OutputAnchor, 10f) || IsPointNear(worldPt, n.InputAnchor, 10f));
         if (nearPort) Cursor = Cursors.Cross;
         else if (Nodes.Count == 0 && _emptyButtonScreenRect.Contains(e.Location)) Cursor = Cursors.Hand;
@@ -748,6 +830,13 @@ public class WorkflowCanvasControl : UserControl
         {
             _isPanning = false;
             Cursor = Cursors.Default;
+
+            // Check if right click was a simple click (not panning drag)
+            float moveDist = Math.Abs(e.X - _mouseDownLocation.X) + Math.Abs(e.Y - _mouseDownLocation.Y);
+            if (moveDist <= 5f)
+            {
+                ShowContextMenu(e.Location);
+            }
         }
 
         if (e.Button == MouseButtons.Left)
@@ -775,6 +864,101 @@ public class WorkflowCanvasControl : UserControl
                 WorkflowChanged?.Invoke();
             }
         }
+    }
+
+    private void ShowContextMenu(Point screenPt)
+    {
+        var worldPt = ScreenToWorld(screenPt);
+        var hitNode = Nodes.AsEnumerable().Reverse().FirstOrDefault(n => n.Bounds.Contains(worldPt));
+        var hitEdge = HitTestEdge(worldPt);
+
+        var menu = new ContextMenuStrip();
+        menu.Renderer = new ToolStripProfessionalRenderer(new DarkColorTable());
+
+        if (hitEdge != null)
+        {
+            SelectedEdge = hitEdge;
+            var itemCut = menu.Items.Add("✂ 이 연결선 끊기 (Delete)");
+            itemCut.Click += (s, ev) => RemoveEdge(hitEdge);
+        }
+        else if (hitNode != null)
+        {
+            SelectedNode = hitNode;
+            
+            var itemCutIn = menu.Items.Add("✂ 이전 공정과의 연결 끊기 (앞쪽)");
+            itemCutIn.Click += (s, ev) => RemoveEdgesForNode(hitNode, incoming: true, outgoing: false);
+
+            var itemCutOut = menu.Items.Add("✂ 다음 공정과의 연결 끊기 (뒤쪽)");
+            itemCutOut.Click += (s, ev) => RemoveEdgesForNode(hitNode, incoming: false, outgoing: true);
+
+            var itemCutAll = menu.Items.Add("✂ 앞뒤 모든 연결 끊기");
+            itemCutAll.Click += (s, ev) => RemoveEdgesForNode(hitNode, incoming: true, outgoing: true);
+
+            menu.Items.Add(new ToolStripSeparator());
+
+            var itemDel = menu.Items.Add("🗑 이 노드 삭제");
+            itemDel.Click += (s, ev) => RemoveNode(hitNode);
+        }
+        else
+        {
+            var itemAddMach = menu.Items.Add("➕ 가공 노드 추가");
+            itemAddMach.Click += (s, ev) => RequestAddQuickNode?.Invoke(NodeCategory.Machining);
+
+            var itemAddInsp = menu.Items.Add("➕ 검사 노드 추가");
+            itemAddInsp.Click += (s, ev) => RequestAddQuickNode?.Invoke(NodeCategory.Inspection);
+
+            var itemAddCollab = menu.Items.Add("➕ 서브인원 노드 추가");
+            itemAddCollab.Click += (s, ev) => RequestAddQuickNode?.Invoke(NodeCategory.Collaboration);
+
+            menu.Items.Add(new ToolStripSeparator());
+
+            var itemReset = menu.Items.Add("⟲ 화면 위치 초기화");
+            itemReset.Click += (s, ev) => ResetView();
+        }
+
+        menu.Show(this, screenPt);
+    }
+
+    private class DarkColorTable : ProfessionalColorTable
+    {
+        public override Color MenuBorder => Color.FromArgb(45, 65, 105);
+        public override Color MenuItemBorder => Color.FromArgb(14, 165, 233);
+        public override Color MenuItemSelected => Color.FromArgb(20, 35, 64);
+        public override Color ToolStripDropDownBackground => Color.FromArgb(15, 27, 49);
+        public override Color ImageMarginGradientBegin => Color.FromArgb(15, 27, 49);
+        public override Color ImageMarginGradientMiddle => Color.FromArgb(15, 27, 49);
+        public override Color ImageMarginGradientEnd => Color.FromArgb(15, 27, 49);
+    }
+
+    public WorkflowEdge? HitTestEdge(PointF worldPt)
+    {
+        var nodeMap = Nodes.ToDictionary(n => n.Id, n => n);
+        foreach (var edge in Edges.AsEnumerable().Reverse())
+        {
+            if (!nodeMap.TryGetValue(edge.FromNodeId, out var fromNode) ||
+                !nodeMap.TryGetValue(edge.ToNodeId, out var toNode))
+                continue;
+
+            PointF p1 = fromNode.OutputAnchor;
+            PointF p2 = toNode.InputAnchor;
+            float dx = Math.Abs(p2.X - p1.X) * 0.5f;
+            float ctrlDist = Math.Max(50f, dx);
+            PointF c1 = new(p1.X + ctrlDist, p1.Y);
+            PointF c2 = new(p2.X - ctrlDist, p2.Y);
+
+            // Test points along the Bezier curve
+            for (float t = 0f; t <= 1.0f; t += 0.05f)
+            {
+                float it = 1f - t;
+                float x = it * it * it * p1.X + 3 * it * it * t * c1.X + 3 * it * t * t * c2.X + t * t * t * p2.X;
+                float y = it * it * it * p1.Y + 3 * it * it * t * c1.Y + 3 * it * t * t * c2.Y + t * t * t * p2.Y;
+                float diffX = worldPt.X - x;
+                float diffY = worldPt.Y - y;
+                if ((diffX * diffX + diffY * diffY) <= 196f) // 14px radius threshold
+                    return edge;
+            }
+        }
+        return null;
     }
 
     protected override void OnMouseWheel(MouseEventArgs e)
@@ -807,6 +991,11 @@ public class WorkflowCanvasControl : UserControl
     private PointF ScreenToWorld(Point screenPt)
     {
         return new PointF((screenPt.X - _panOffset.X) / _zoom, (screenPt.Y - _panOffset.Y) / _zoom);
+    }
+
+    private PointF WorldToScreen(PointF worldPt)
+    {
+        return new PointF(worldPt.X * _zoom + _panOffset.X, worldPt.Y * _zoom + _panOffset.Y);
     }
 
     private static bool IsPointNear(PointF p1, PointF p2, float threshold)
