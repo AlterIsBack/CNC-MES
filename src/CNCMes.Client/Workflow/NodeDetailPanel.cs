@@ -76,9 +76,11 @@ public class NodeDetailPanel : UserControl
     };
 
     private WorkflowNode? _currentNode;
+    private readonly List<WorkflowNode> _currentNodes = new();
     private bool _isBinding;
 
     // Controls
+    private Label _lblHeader = null!;
     private Label _lblOrderAndPart = null!;
     private Label _lblCurrentStatus = null!;
     private ComboBox _cboTitle = null!;
@@ -106,8 +108,11 @@ public class NodeDetailPanel : UserControl
     private Button _btnSendSubTask = null!;
 
     public event Action<WorkflowNode, NodeStatus>? StatusChangeRequested;
+    public event Action<List<WorkflowNode>, NodeStatus>? BatchStatusChangeRequested;
     public event Action<WorkflowNode>? NodeUpdated;
+    public event Action<List<WorkflowNode>>? NodesUpdated;
     public event Action<WorkflowNode>? NodeDeleteRequested;
+    public event Action<List<WorkflowNode>>? BatchNodesDeleteRequested;
     public event Action<WorkflowNode>? NodeDuplicateRequested;
     public event Action<WorkflowNode>? NodeDisconnectRequested;
     public event Action<WorkflowNode, string, string>? SubWorkerTaskSendRequested;
@@ -144,7 +149,7 @@ public class NodeDetailPanel : UserControl
 
         // 0: Header
         var pnlHeader = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) };
-        var lblHeader = new Label
+        _lblHeader = new Label
         {
             Text = "⚙ 선택 노드 상세 정보 실시간 조작",
             Font = new Font("맑은 고딕", 10f, FontStyle.Bold),
@@ -160,7 +165,7 @@ public class NodeDetailPanel : UserControl
             Dock = DockStyle.Right,
             AutoSize = true
         };
-        pnlHeader.Controls.AddRange(new Control[] { lblHeader, _lblCurrentStatus });
+        pnlHeader.Controls.AddRange(new Control[] { _lblHeader, _lblCurrentStatus });
         mainLayout.Controls.Add(pnlHeader, 0, 0);
 
         // 1: Work Order & Part
@@ -342,49 +347,71 @@ public class NodeDetailPanel : UserControl
         _btnSaveDetails = CreateFlatButton("💾 저장", Palette.Bg800, Color.White);
         _btnSaveDetails.Click += (s, e) =>
         {
-            if (_currentNode == null)
+            if (_currentNodes.Count == 0 && _currentNode == null)
             {
                 MessageBox.Show("편집할 작업 노드를 캔버스에서 먼저 선택해 주세요.", "안내", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
             SaveChangesToNode();
-            MessageBox.Show("노드 정보와 작업 지시 메모가 반영되었습니다.", "저장 완료", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            string msg = _currentNodes.Count > 1
+                ? $"{_currentNodes.Count}개 공정 노드의 설정(설비/공정 등)이 일괄 저장되었습니다."
+                : $"'{_currentNode?.Title}' 노드의 세부 내용이 저장되었습니다.";
+            MessageBox.Show(msg, "저장 완료", MessageBoxButtons.OK, MessageBoxIcon.Information);
         };
 
-        _btnDuplicate = CreateFlatButton("📋 복제", Palette.Bg800, Color.White);
+        _btnDuplicate = CreateFlatButton("📋 공정 복제", Palette.Bg800, Color.White);
         _btnDuplicate.Click += (s, e) =>
         {
-            if (_currentNode == null)
+            if (_currentNodes.Count > 1)
             {
-                MessageBox.Show("복제할 작업 노드를 캔버스에서 먼저 선택해 주세요.", "안내", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                foreach (var n in _currentNodes.ToList())
+                    NodeDuplicateRequested?.Invoke(n);
                 return;
             }
-            NodeDuplicateRequested?.Invoke(_currentNode);
+            if (_currentNode != null) NodeDuplicateRequested?.Invoke(_currentNode);
         };
 
-        _btnDisconnect = CreateFlatButton("✂ 끊기", Color.FromArgb(30, 41, 59), Palette.Amber);
+        _btnDisconnect = CreateFlatButton("✂ 연결 끊기", Palette.Bg800, Palette.Amber);
         _btnDisconnect.Click += (s, e) =>
         {
-            if (_currentNode == null)
+            if (_currentNodes.Count > 1)
             {
-                MessageBox.Show("연결을 끊을 작업 노드를 캔버스에서 먼저 선택해 주세요.", "안내", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                foreach (var n in _currentNodes.ToList())
+                    NodeDisconnectRequested?.Invoke(n);
                 return;
             }
-            NodeDisconnectRequested?.Invoke(_currentNode);
+            if (_currentNode != null) NodeDisconnectRequested?.Invoke(_currentNode);
         };
 
-        _btnDelete = CreateFlatButton("🗑 삭제", Color.FromArgb(185, 28, 28), Color.White);
+        _btnDelete = CreateFlatButton("🗑 노드 삭제", Color.FromArgb(127, 29, 29), Color.White);
         _btnDelete.Click += (s, e) =>
         {
-            if (_currentNode == null)
+            if (_currentNodes.Count > 1)
             {
-                MessageBox.Show("삭제할 작업 노드를 캔버스에서 먼저 선택해 주세요.", "안내", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                if (MessageBox.Show(
+                    $"현재 다중 선택된 총 {_currentNodes.Count}개의 공정 노드를 모두 삭제하시겠습니까?",
+                    "일괄 삭제 확인",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning) == DialogResult.Yes)
+                {
+                    var targets = _currentNodes.ToList();
+                    BatchNodesDeleteRequested?.Invoke(targets);
+                    SetEmptyState();
+                }
                 return;
             }
-            if (MessageBox.Show($"'{_currentNode.Title}' 공정 노드를 삭제하시겠습니까?", "노드 삭제 확인", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
+
+            if (_currentNode != null)
             {
-                NodeDeleteRequested?.Invoke(_currentNode);
-                SetEmptyState();
+                if (MessageBox.Show(
+                    $"'{_currentNode.Title}' 노드를 삭제하시겠습니까?",
+                    "노드 삭제 확인",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question) == DialogResult.Yes)
+                {
+                    NodeDeleteRequested?.Invoke(_currentNode);
+                    SetEmptyState();
+                }
             }
         };
 
@@ -424,8 +451,19 @@ public class NodeDetailPanel : UserControl
 
     public void BindNode(WorkflowNode? node)
     {
-        _currentNode = node;
         if (node == null)
+            BindNodes(Array.Empty<WorkflowNode>());
+        else
+            BindNodes(new[] { node });
+    }
+
+    public void BindNodes(IReadOnlyList<WorkflowNode> nodes)
+    {
+        _currentNodes.Clear();
+        _currentNodes.AddRange(nodes);
+        _currentNode = nodes.FirstOrDefault();
+
+        if (nodes.Count == 0)
         {
             SetEmptyState();
             return;
@@ -434,36 +472,105 @@ public class NodeDetailPanel : UserControl
         _isBinding = true;
         try
         {
-            _lblOrderAndPart.Text = $"작지: {node.OrderNumber} | 부품: {node.PartName}";
-            _lblCurrentStatus.Text = $"[{GetStatusText(node.Status)}]";
-            _lblCurrentStatus.ForeColor = GetStatusColor(node.Status);
-
-            _cboCategory.SelectedIndex = Math.Clamp((int)node.Category, 0, 5);
-            PopulateTitlePresets(node.Category, node.Title);
-            _cboTitle.Text = node.Title;
-
-            int machIdx = _cboMachine.Items.IndexOf(node.MachineId);
-            if (machIdx >= 0) _cboMachine.SelectedIndex = machIdx;
-            else if (_cboMachine.Items.Count > 0) _cboMachine.SelectedIndex = 0;
-
-            _txtAssignee.Text = node.Assignee;
-            _txtDetails.Text = node.Details;
-            _txtNextProcess.Text = node.NextProcess;
-            _txtSubWorker.Text = string.IsNullOrEmpty(node.SubWorkerName) ? "이서브" : node.SubWorkerName;
-            _txtSubInstruction.Text = node.SubWorkerInstruction;
-
-            if (node.IsSubWorkerTaskSent)
+            if (nodes.Count == 1)
             {
-                _lblSubWorkerTaskStatus.Text = "● 지시 전송됨";
-                _lblSubWorkerTaskStatus.ForeColor = Palette.Green;
+                var node = nodes[0];
+                _lblHeader.Text = "⚙ 선택 노드 상세 정보 실시간 조작";
+                _lblHeader.ForeColor = Palette.TextWhite;
+                _lblOrderAndPart.Text = $"작지: {node.OrderNumber} | 부품: {node.PartName}";
+                _lblCurrentStatus.Text = $"[{GetStatusText(node.Status)}]";
+                _lblCurrentStatus.ForeColor = GetStatusColor(node.Status);
+
+                _cboCategory.SelectedIndex = Math.Clamp((int)node.Category, 0, 5);
+                PopulateTitlePresets(node.Category, node.Title);
+                _cboTitle.Text = node.Title;
+
+                int machIdx = _cboMachine.Items.IndexOf(node.MachineId);
+                if (machIdx >= 0) _cboMachine.SelectedIndex = machIdx;
+                else if (_cboMachine.Items.Count > 0) _cboMachine.SelectedIndex = 0;
+
+                _txtAssignee.Text = node.Assignee;
+                _txtDetails.Text = node.Details;
+                _txtNextProcess.Text = node.NextProcess;
+                _txtSubWorker.Text = string.IsNullOrEmpty(node.SubWorkerName) ? "이서브" : node.SubWorkerName;
+                _txtSubInstruction.Text = node.SubWorkerInstruction;
+
+                if (node.IsSubWorkerTaskSent)
+                {
+                    _lblSubWorkerTaskStatus.Text = "● 지시 전송됨";
+                    _lblSubWorkerTaskStatus.ForeColor = Palette.Green;
+                }
+                else
+                {
+                    _lblSubWorkerTaskStatus.Text = "○ 미발송";
+                    _lblSubWorkerTaskStatus.ForeColor = Palette.TextSlate400;
+                }
+
+                _btnDelete.Text = "🗑 노드 삭제";
+                _btnSaveDetails.Text = "💾 저장";
+                UpdateStatusButtonsHighlight(node.Status);
             }
             else
             {
-                _lblSubWorkerTaskStatus.Text = "○ 미발송";
-                _lblSubWorkerTaskStatus.ForeColor = Palette.TextSlate400;
-            }
+                // Multi-node Batch Edit Mode!
+                _lblHeader.Text = $"⚡ 선택 노드 일괄 편집 ({nodes.Count}개 선택됨)";
+                _lblHeader.ForeColor = Palette.FocusBorder;
+                _lblOrderAndPart.Text = $"[다중 선택 모드] {nodes.Count}개 공정 노드 일괄 설정 대상";
 
-            UpdateStatusButtonsHighlight(node.Status);
+                // Status check: if all have same status, show that, else [다중 상태]
+                bool sameStatus = nodes.All(n => n.Status == nodes[0].Status);
+                if (sameStatus)
+                {
+                    _lblCurrentStatus.Text = $"[{GetStatusText(nodes[0].Status)}]";
+                    _lblCurrentStatus.ForeColor = GetStatusColor(nodes[0].Status);
+                    UpdateStatusButtonsHighlight(nodes[0].Status);
+                }
+                else
+                {
+                    _lblCurrentStatus.Text = "[다중 상태]";
+                    _lblCurrentStatus.ForeColor = Palette.Amber;
+                    UpdateStatusButtonsHighlight((NodeStatus)(-1)); // clear all
+                }
+
+                // Category check
+                bool sameCategory = nodes.All(n => n.Category == nodes[0].Category);
+                if (sameCategory)
+                {
+                    _cboCategory.SelectedIndex = Math.Clamp((int)nodes[0].Category, 0, 5);
+                    PopulateTitlePresets(nodes[0].Category, "(선택 노드 일괄 적용)");
+                }
+                else
+                {
+                    _cboCategory.SelectedIndex = 1; // 가공
+                    PopulateTitlePresets(NodeCategory.Machining, "(선택 노드 일괄 적용)");
+                }
+
+                // Machine check: if all have same machine, select that machine!
+                bool sameMachine = nodes.All(n => string.Equals(n.MachineId, nodes[0].MachineId, StringComparison.OrdinalIgnoreCase));
+                if (sameMachine && !string.IsNullOrEmpty(nodes[0].MachineId))
+                {
+                    int machIdx = _cboMachine.Items.IndexOf(nodes[0].MachineId);
+                    if (machIdx >= 0) _cboMachine.SelectedIndex = machIdx;
+                    else _cboMachine.SelectedIndex = 0;
+                }
+                else
+                {
+                    int machIdx = _cboMachine.Items.IndexOf(nodes[0].MachineId);
+                    if (machIdx >= 0) _cboMachine.SelectedIndex = machIdx;
+                    else _cboMachine.SelectedIndex = 0;
+                }
+
+                _txtAssignee.Text = nodes.All(n => n.Assignee == nodes[0].Assignee) ? nodes[0].Assignee : "";
+                _txtDetails.Text = "";
+                _txtNextProcess.Text = "";
+                _txtSubWorker.Text = "";
+                _txtSubInstruction.Text = "";
+                _lblSubWorkerTaskStatus.Text = $"○ {nodes.Count}개 노드";
+                _lblSubWorkerTaskStatus.ForeColor = Palette.TextSlate400;
+
+                _btnDelete.Text = $"🗑 일괄 삭제 ({nodes.Count})";
+                _btnSaveDetails.Text = "💾 일괄 저장";
+            }
         }
         finally
         {
@@ -495,7 +602,27 @@ public class NodeDetailPanel : UserControl
 
     private void SaveChangesToNode()
     {
-        if (_isBinding || _currentNode == null) return;
+        if (_isBinding) return;
+
+        if (_currentNodes.Count > 1)
+        {
+            string selectedMach = _cboMachine.SelectedItem?.ToString() ?? "R01";
+            var selectedCat = (NodeCategory)Math.Clamp(_cboCategory.SelectedIndex, 0, 5);
+            string assignee = _txtAssignee.Text.Trim();
+            string details = _txtDetails.Text;
+
+            foreach (var node in _currentNodes)
+            {
+                node.MachineId = selectedMach;
+                if (!string.IsNullOrWhiteSpace(assignee)) node.Assignee = assignee;
+                if (!string.IsNullOrWhiteSpace(details)) node.Details = details;
+            }
+
+            NodesUpdated?.Invoke(_currentNodes);
+            return;
+        }
+
+        if (_currentNode == null) return;
 
         _currentNode.Title = _cboTitle.Text.Trim();
         _currentNode.Category = (NodeCategory)_cboCategory.SelectedIndex;
@@ -511,23 +638,48 @@ public class NodeDetailPanel : UserControl
 
     private void TriggerStatusChange(NodeStatus newStatus)
     {
-        if (_currentNode == null)
+        if (_currentNodes.Count == 0 && _currentNode == null)
         {
             MessageBox.Show("편집할 작업 노드를 캔버스에서 먼저 선택해 주세요.", "노드 미선택", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
-        SaveChangesToNode();
-        _currentNode.Status = newStatus;
-        if (newStatus == NodeStatus.Running && _currentNode.StartedAt == null)
-            _currentNode.StartedAt = DateTime.Now;
-        if (newStatus == NodeStatus.Completed && _currentNode.CompletedAt == null)
-            _currentNode.CompletedAt = DateTime.Now;
 
-        _lblCurrentStatus.Text = $"[{GetStatusText(newStatus)}]";
-        _lblCurrentStatus.ForeColor = GetStatusColor(newStatus);
-        UpdateStatusButtonsHighlight(newStatus);
+        if (_currentNodes.Count > 1)
+        {
+            SaveChangesToNode();
+            foreach (var node in _currentNodes)
+            {
+                node.Status = newStatus;
+                if (newStatus == NodeStatus.Running && node.StartedAt == null)
+                    node.StartedAt = DateTime.Now;
+                if (newStatus == NodeStatus.Completed && node.CompletedAt == null)
+                    node.CompletedAt = DateTime.Now;
+            }
 
-        StatusChangeRequested?.Invoke(_currentNode, newStatus);
+            _lblCurrentStatus.Text = $"[일괄 {GetStatusText(newStatus)}]";
+            _lblCurrentStatus.ForeColor = GetStatusColor(newStatus);
+            UpdateStatusButtonsHighlight(newStatus);
+
+            BatchStatusChangeRequested?.Invoke(_currentNodes, newStatus);
+            NodesUpdated?.Invoke(_currentNodes);
+            return;
+        }
+
+        if (_currentNode != null)
+        {
+            SaveChangesToNode();
+            _currentNode.Status = newStatus;
+            if (newStatus == NodeStatus.Running && _currentNode.StartedAt == null)
+                _currentNode.StartedAt = DateTime.Now;
+            if (newStatus == NodeStatus.Completed && _currentNode.CompletedAt == null)
+                _currentNode.CompletedAt = DateTime.Now;
+
+            _lblCurrentStatus.Text = $"[{GetStatusText(newStatus)}]";
+            _lblCurrentStatus.ForeColor = GetStatusColor(newStatus);
+            UpdateStatusButtonsHighlight(newStatus);
+
+            StatusChangeRequested?.Invoke(_currentNode, newStatus);
+        }
     }
 
     private void OnSendSubWorkerTaskClicked()
@@ -571,9 +723,17 @@ public class NodeDetailPanel : UserControl
     public void SetEmptyState()
     {
         _currentNode = null;
+        _currentNodes.Clear();
         _isBinding = true;
         try
         {
+            if (_lblHeader != null)
+            {
+                _lblHeader.Text = "⚙ 선택 노드 상세 정보 실시간 조작";
+                _lblHeader.ForeColor = Palette.TextWhite;
+            }
+            if (_btnDelete != null) _btnDelete.Text = "🗑 노드 삭제";
+            if (_btnSaveDetails != null) _btnSaveDetails.Text = "💾 저장";
             _lblOrderAndPart.Text = "작지: [선택 없음] | 부품: [선택 없음]";
             _lblCurrentStatus.Text = "[대기]";
             _lblCurrentStatus.ForeColor = Palette.TextSlate400;
@@ -615,7 +775,7 @@ public class NodeDetailPanel : UserControl
         return btn;
     }
 
-    private string GetStatusText(NodeStatus s) => s switch
+    public static string GetStatusText(NodeStatus s) => s switch
     {
         NodeStatus.Ready => "대기",
         NodeStatus.Running => "진행중",

@@ -32,6 +32,8 @@ public class WorkflowCanvasControl : UserControl
     public bool IsWorkflowConfirmed { get; set; } = false;
     public string ConfirmedInfoText { get; set; } = "";
 
+    public List<WorkflowNode> SelectedNodes { get; } = new();
+    public event Action<IReadOnlyList<WorkflowNode>>? SelectionChanged;
     public event Action<WorkflowNode?>? NodeSelected;
     public event Action<WorkflowEdge?>? EdgeSelected;
     public event Action<WorkflowNode>? NodeDoubleClicked;
@@ -41,13 +43,19 @@ public class WorkflowCanvasControl : UserControl
 
     private WorkflowNode? _selectedNode;
     private WorkflowEdge? _selectedEdge;
-    private WorkflowNode? _draggedNode;
-    private PointF _dragStartOffset;
+    private List<WorkflowNode> _draggedNodes = new();
+    private Dictionary<WorkflowNode, PointF> _dragStartOffsets = new();
     private bool _isPanning;
     private Point _panStartMouse;
     private Point _mouseDownLocation;
     private PointF _panOffset = new(40, 40);
     private float _zoom = 1.0f;
+
+    // Marquee / Box Selection
+    private bool _isBoxSelecting;
+    private Point _boxSelectStartScreen;
+    private Point _boxSelectCurrentScreen;
+    private List<WorkflowNode> _initialSelectionBeforeBox = new();
 
     // Edge Creation Dragging
     private WorkflowNode? _connectingFromNode;
@@ -72,14 +80,15 @@ public class WorkflowCanvasControl : UserControl
         get => _selectedNode;
         set
         {
-            if (_selectedNode != value)
+            if (_selectedNode != value || (_selectedNode != null && SelectedNodes.Count > 1))
             {
                 foreach (var n in Nodes) n.IsSelected = false;
+                SelectedNodes.Clear();
                 _selectedNode = value;
                 if (_selectedNode != null)
                 {
                     _selectedNode.IsSelected = true;
-                    // Deselect edge when node is selected
+                    SelectedNodes.Add(_selectedNode);
                     if (_selectedEdge != null)
                     {
                         _selectedEdge.IsSelected = false;
@@ -89,8 +98,43 @@ public class WorkflowCanvasControl : UserControl
                 }
                 Invalidate();
                 NodeSelected?.Invoke(_selectedNode);
+                SelectionChanged?.Invoke(SelectedNodes);
             }
         }
+    }
+
+    public void SetSelectedNodes(IEnumerable<WorkflowNode> nodes)
+    {
+        foreach (var n in Nodes) n.IsSelected = false;
+        SelectedNodes.Clear();
+        foreach (var n in nodes)
+        {
+            if (Nodes.Contains(n))
+            {
+                n.IsSelected = true;
+                SelectedNodes.Add(n);
+            }
+        }
+        _selectedNode = SelectedNodes.FirstOrDefault();
+        if (_selectedEdge != null)
+        {
+            _selectedEdge.IsSelected = false;
+            _selectedEdge = null;
+            EdgeSelected?.Invoke(null);
+        }
+        Invalidate();
+        NodeSelected?.Invoke(_selectedNode);
+        SelectionChanged?.Invoke(SelectedNodes);
+    }
+
+    public void SelectAllNodes()
+    {
+        SetSelectedNodes(Nodes);
+    }
+
+    public void ClearSelection()
+    {
+        SelectedNode = null;
     }
 
     public WorkflowEdge? SelectedEdge
@@ -123,10 +167,12 @@ public class WorkflowCanvasControl : UserControl
     {
         Nodes.Clear();
         Edges.Clear();
+        SelectedNodes.Clear();
         _selectedNode = null;
         _selectedEdge = null;
         Invalidate();
         WorkflowChanged?.Invoke();
+        SelectionChanged?.Invoke(SelectedNodes);
     }
 
     public void AddNode(WorkflowNode node)
@@ -140,11 +186,31 @@ public class WorkflowCanvasControl : UserControl
     public void RemoveNode(WorkflowNode node)
     {
         Nodes.Remove(node);
+        SelectedNodes.Remove(node);
         Edges.RemoveAll(e => e.FromNodeId == node.Id || e.ToNodeId == node.Id);
-        if (_selectedNode == node) SelectedNode = null;
+        if (_selectedNode == node) _selectedNode = SelectedNodes.FirstOrDefault();
         if (_selectedEdge != null && !Edges.Contains(_selectedEdge)) SelectedEdge = null;
         Invalidate();
         WorkflowChanged?.Invoke();
+        NodeSelected?.Invoke(_selectedNode);
+        SelectionChanged?.Invoke(SelectedNodes);
+    }
+
+    public void RemoveNodes(IEnumerable<WorkflowNode> nodes)
+    {
+        var list = nodes.ToList();
+        foreach (var n in list)
+        {
+            Nodes.Remove(n);
+            SelectedNodes.Remove(n);
+            Edges.RemoveAll(e => e.FromNodeId == n.Id || e.ToNodeId == n.Id);
+        }
+        _selectedNode = SelectedNodes.FirstOrDefault();
+        if (_selectedEdge != null && !Edges.Contains(_selectedEdge)) SelectedEdge = null;
+        Invalidate();
+        WorkflowChanged?.Invoke();
+        NodeSelected?.Invoke(_selectedNode);
+        SelectionChanged?.Invoke(SelectedNodes);
     }
 
     public void RemoveEdge(WorkflowEdge edge)
@@ -287,6 +353,7 @@ public class WorkflowCanvasControl : UserControl
         DrawCutButtonOverlay(g);
         DrawConfirmedBadgeOverlay(g);
         DrawHudOverlay(g);
+        DrawMarqueeSelectionOverlay(g);
     }
 
     private void DrawEmptyCanvasGuide(Graphics g)
@@ -512,11 +579,26 @@ public class WorkflowCanvasControl : UserControl
     {
         var rect = node.Bounds;
         Color catColor = GetCategoryColor(node.Category);
+        bool isSelected = node.IsSelected || SelectedNodes.Contains(node);
 
         using (var bgBrush = new SolidBrush(Palette.NodeBg))
-        using (var borderPen = new Pen(node.IsSelected ? Palette.NodeSelected : Palette.NodeBorder, node.IsSelected ? 2.2f : 1f))
+        using (var borderPen = new Pen(isSelected ? Palette.NodeSelected : Palette.NodeBorder, isSelected ? 2.6f : 1f))
         {
             DrawRoundedRectangle(g, bgBrush, borderPen, rect, 8f);
+        }
+
+        // Multi-select Check Badge (Top-left corner indicator)
+        if (isSelected && SelectedNodes.Count > 1)
+        {
+            var selBadgeRect = new RectangleF(rect.X - 4f, rect.Y - 4f, 18f, 18f);
+            using var badgeBg = new SolidBrush(Color.FromArgb(240, 14, 165, 233));
+            using var badgeBorder = new Pen(Color.White, 1.2f);
+            g.FillEllipse(badgeBg, selBadgeRect);
+            g.DrawEllipse(badgeBorder, selBadgeRect);
+
+            using var fontCheck = new Font("맑은 고딕", 7.2f, FontStyle.Bold);
+            var sfCheck = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+            g.DrawString("✓", fontCheck, Brushes.White, selBadgeRect, sfCheck);
         }
 
         // Header Category Badge
@@ -664,9 +746,32 @@ public class WorkflowCanvasControl : UserControl
         g.DrawString(fullText, font, brush, rect, sf);
     }
 
+    private void DrawMarqueeSelectionOverlay(Graphics g)
+    {
+        if (!_isBoxSelecting) return;
+
+        float sx = Math.Min(_boxSelectStartScreen.X, _boxSelectCurrentScreen.X);
+        float sy = Math.Min(_boxSelectStartScreen.Y, _boxSelectCurrentScreen.Y);
+        float sw = Math.Abs(_boxSelectStartScreen.X - _boxSelectCurrentScreen.X);
+        float sh = Math.Abs(_boxSelectStartScreen.Y - _boxSelectCurrentScreen.Y);
+
+        if (sw < 1f || sh < 1f) return;
+
+        var boxRect = new RectangleF(sx, sy, sw, sh);
+
+        using var brush = new SolidBrush(Color.FromArgb(45, 14, 165, 233)); // Sky translucent
+        g.FillRectangle(brush, boxRect);
+
+        using var pen = new Pen(Color.FromArgb(56, 189, 248), 1.5f) { DashStyle = DashStyle.Dash };
+        g.DrawRectangle(pen, boxRect.X, boxRect.Y, boxRect.Width, boxRect.Height);
+    }
+
     private void DrawHudOverlay(Graphics g)
     {
-        string hudText = $"노드: {Nodes.Count}개 | 연결: {Edges.Count}개 | 줌: {(int)(_zoom * 100)}% | [연결선 클릭 후 Del 키로 끊기]";
+        string selInfo = SelectedNodes.Count > 1
+            ? $" | ⚡ {SelectedNodes.Count}개 노드 다중 선택됨 (우측에서 설비/상태 일괄변경 | Esc 선택해제)"
+            : (SelectedNodes.Count == 1 ? $" | 선택: [{SelectedNodes[0].Title}] (설비: {SelectedNodes[0].MachineId})" : "");
+        string hudText = $"노드: {Nodes.Count}개 | 연결: {Edges.Count}개 | 줌: {(int)(_zoom * 100)}%{selInfo} | [마우스 드래그: 영역 다중선택 | Ctrl+A 전체선택]";
         using var font = new Font("Consolas", 8.2f);
         var size = g.MeasureString(hudText, font);
 
@@ -722,6 +827,21 @@ public class WorkflowCanvasControl : UserControl
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
+
+        if (e.Control && e.KeyCode == Keys.A)
+        {
+            SelectAllNodes();
+            e.Handled = true;
+            return;
+        }
+
+        if (e.KeyCode == Keys.Escape)
+        {
+            ClearSelection();
+            e.Handled = true;
+            return;
+        }
+
         if (e.KeyCode == Keys.Delete || e.KeyCode == Keys.Back)
         {
             if (_selectedEdge != null)
@@ -729,9 +849,9 @@ public class WorkflowCanvasControl : UserControl
                 RemoveEdge(_selectedEdge);
                 e.Handled = true;
             }
-            else if (_selectedNode != null)
+            else if (SelectedNodes.Count > 0)
             {
-                RemoveNode(_selectedNode);
+                RemoveNodes(SelectedNodes);
                 e.Handled = true;
             }
         }
@@ -740,7 +860,7 @@ public class WorkflowCanvasControl : UserControl
     protected override void OnMouseDown(MouseEventArgs e)
     {
         base.OnMouseDown(e);
-        Focus(); // Ensure canvas captures keyboard focus for Delete key
+        Focus(); // Ensure canvas captures keyboard focus for Delete/Ctrl+A keys
 
         _mouseDownLocation = e.Location;
 
@@ -786,9 +906,46 @@ public class WorkflowCanvasControl : UserControl
             var hitNode = Nodes.AsEnumerable().Reverse().FirstOrDefault(n => n.Bounds.Contains(worldPt));
             if (hitNode != null)
             {
-                SelectedNode = hitNode;
-                _draggedNode = hitNode;
-                _dragStartOffset = new PointF(worldPt.X - hitNode.X, worldPt.Y - hitNode.Y);
+                bool isCtrlOrShift = (ModifierKeys & (Keys.Control | Keys.Shift)) != 0;
+
+                if (isCtrlOrShift)
+                {
+                    // Toggle selection of this node
+                    if (SelectedNodes.Contains(hitNode))
+                    {
+                        SelectedNodes.Remove(hitNode);
+                        hitNode.IsSelected = false;
+                        _selectedNode = SelectedNodes.FirstOrDefault();
+                    }
+                    else
+                    {
+                        SelectedNodes.Add(hitNode);
+                        hitNode.IsSelected = true;
+                        _selectedNode = hitNode;
+                    }
+
+                    if (_selectedEdge != null)
+                    {
+                        _selectedEdge.IsSelected = false;
+                        _selectedEdge = null;
+                        EdgeSelected?.Invoke(null);
+                    }
+
+                    Invalidate();
+                    NodeSelected?.Invoke(_selectedNode);
+                    SelectionChanged?.Invoke(SelectedNodes);
+                    return;
+                }
+
+                // Normal click: if clicked node is not part of multi-selection, select only this node
+                if (!SelectedNodes.Contains(hitNode))
+                {
+                    SetSelectedNodes(new[] { hitNode });
+                }
+
+                // Prepare multi-drag for all selected nodes
+                _draggedNodes = SelectedNodes.ToList();
+                _dragStartOffsets = _draggedNodes.ToDictionary(n => n, n => new PointF(worldPt.X - n.X, worldPt.Y - n.Y));
                 return;
             }
 
@@ -800,9 +957,19 @@ public class WorkflowCanvasControl : UserControl
                 return;
             }
 
-            // Clicked empty background
-            SelectedNode = null;
-            SelectedEdge = null;
+            // 4. Clicked empty background: Start Box / Rubberband Drag Selection!
+            bool keepOld = (ModifierKeys & (Keys.Control | Keys.Shift)) != 0;
+            if (!keepOld)
+            {
+                SetSelectedNodes(Array.Empty<WorkflowNode>());
+                SelectedEdge = null;
+            }
+
+            _isBoxSelecting = true;
+            _boxSelectStartScreen = e.Location;
+            _boxSelectCurrentScreen = e.Location;
+            _initialSelectionBeforeBox = SelectedNodes.ToList();
+            Invalidate();
         }
     }
 
@@ -830,10 +997,55 @@ public class WorkflowCanvasControl : UserControl
             return;
         }
 
-        if (_draggedNode != null)
+        // Marquee Box Drag Selection in progress
+        if (_isBoxSelecting)
         {
-            _draggedNode.X = worldPt.X - _dragStartOffset.X;
-            _draggedNode.Y = worldPt.Y - _dragStartOffset.Y;
+            _boxSelectCurrentScreen = e.Location;
+
+            float sx = Math.Min(_boxSelectStartScreen.X, _boxSelectCurrentScreen.X);
+            float sy = Math.Min(_boxSelectStartScreen.Y, _boxSelectCurrentScreen.Y);
+            float sw = Math.Abs(_boxSelectStartScreen.X - _boxSelectCurrentScreen.X);
+            float sh = Math.Abs(_boxSelectStartScreen.Y - _boxSelectCurrentScreen.Y);
+
+            PointF p1 = ScreenToWorld(new PointF(sx, sy));
+            PointF p2 = ScreenToWorld(new PointF(sx + sw, sy + sh));
+            var worldBox = new RectangleF(p1.X, p1.Y, p2.X - p1.X, p2.Y - p1.Y);
+
+            bool keepOld = (ModifierKeys & (Keys.Control | Keys.Shift)) != 0;
+            var currentSet = keepOld ? new HashSet<WorkflowNode>(_initialSelectionBeforeBox) : new HashSet<WorkflowNode>();
+
+            foreach (var node in Nodes)
+            {
+                if (node.Bounds.IntersectsWith(worldBox))
+                {
+                    currentSet.Add(node);
+                }
+            }
+
+            foreach (var node in Nodes)
+            {
+                node.IsSelected = currentSet.Contains(node);
+            }
+
+            SelectedNodes.Clear();
+            SelectedNodes.AddRange(currentSet);
+            _selectedNode = SelectedNodes.FirstOrDefault();
+
+            Invalidate();
+            return;
+        }
+
+        // Moving multiple selected nodes
+        if (_draggedNodes.Count > 0)
+        {
+            foreach (var n in _draggedNodes)
+            {
+                if (_dragStartOffsets.TryGetValue(n, out var offset))
+                {
+                    n.X = worldPt.X - offset.X;
+                    n.Y = worldPt.Y - offset.Y;
+                }
+            }
             Invalidate();
             return;
         }
@@ -887,9 +1099,18 @@ public class WorkflowCanvasControl : UserControl
                 Invalidate();
             }
 
-            if (_draggedNode != null)
+            if (_isBoxSelecting)
             {
-                _draggedNode = null;
+                _isBoxSelecting = false;
+                Invalidate();
+                NodeSelected?.Invoke(_selectedNode);
+                SelectionChanged?.Invoke(SelectedNodes);
+            }
+
+            if (_draggedNodes.Count > 0)
+            {
+                _draggedNodes.Clear();
+                _dragStartOffsets.Clear();
                 WorkflowChanged?.Invoke();
             }
         }
@@ -910,7 +1131,36 @@ public class WorkflowCanvasControl : UserControl
             Renderer = new DarkContextMenuRenderer()
         };
 
-        if (hitEdge != null)
+        if (SelectedNodes.Count > 1 && (hitNode == null || SelectedNodes.Contains(hitNode)))
+        {
+            var itemMultiHeader = menu.Items.Add($"⚡ 선택된 {SelectedNodes.Count}개 노드 일괄 관리");
+            itemMultiHeader.Enabled = false;
+            itemMultiHeader.ForeColor = Color.FromArgb(56, 189, 248);
+
+            menu.Items.Add(new ToolStripSeparator());
+
+            var itemCutAllMulti = menu.Items.Add($"✂ 선택 노드들 연결선 모두 끊기");
+            itemCutAllMulti.ForeColor = Color.FromArgb(254, 240, 138); // Yellow highlight
+            itemCutAllMulti.Click += (s, ev) =>
+            {
+                foreach (var n in SelectedNodes.ToList())
+                    RemoveEdgesForNode(n, incoming: true, outgoing: true);
+            };
+
+            var itemDelMulti = menu.Items.Add($"🗑 선택된 {SelectedNodes.Count}개 노드 일괄 삭제 (Del)");
+            itemDelMulti.ForeColor = Color.FromArgb(252, 165, 165); // Red highlight
+            itemDelMulti.Click += (s, ev) =>
+            {
+                RemoveNodes(SelectedNodes);
+            };
+
+            menu.Items.Add(new ToolStripSeparator());
+
+            var itemDeselect = menu.Items.Add("✕ 선택 해제 (Esc)");
+            itemDeselect.ForeColor = Color.White;
+            itemDeselect.Click += (s, ev) => ClearSelection();
+        }
+        else if (hitEdge != null)
         {
             SelectedEdge = hitEdge;
             var itemCut = menu.Items.Add("✂ 이 연결선 끊기 (Delete)");
@@ -941,6 +1191,12 @@ public class WorkflowCanvasControl : UserControl
         }
         else
         {
+            var itemSelectAll = menu.Items.Add("🔲 전체 노드 선택 (Ctrl+A)");
+            itemSelectAll.ForeColor = Color.FromArgb(56, 189, 248);
+            itemSelectAll.Click += (s, ev) => SelectAllNodes();
+
+            menu.Items.Add(new ToolStripSeparator());
+
             var itemAddMach = menu.Items.Add("➕ 가공 노드 추가");
             itemAddMach.ForeColor = Color.FromArgb(167, 243, 208); // Soft green
             itemAddMach.Click += (s, ev) => RequestAddQuickNode?.Invoke(NodeCategory.Machining);
@@ -1068,7 +1324,9 @@ public class WorkflowCanvasControl : UserControl
         }
     }
 
-    private PointF ScreenToWorld(Point screenPt)
+    private PointF ScreenToWorld(Point screenPt) => ScreenToWorld(new PointF(screenPt.X, screenPt.Y));
+
+    private PointF ScreenToWorld(PointF screenPt)
     {
         return new PointF((screenPt.X - _panOffset.X) / _zoom, (screenPt.Y - _panOffset.Y) / _zoom);
     }
