@@ -34,6 +34,7 @@ public class WorkflowMainForm : Form
     private Label _lblActiveMachineSummary = null!;
     private Label _lblLiveClock = null!;
     private Button _btnToggleTimelineGuides = null!;
+    private Button _btnTimelineBaseConfig = null!;
     private FlowLayoutPanel _pnlSubWorkerCards = null!;
     private Button _btnRefreshAll = null!;
     private Button _btnOpenNoticesTop = null!;
@@ -109,7 +110,7 @@ public class WorkflowMainForm : Form
 
     private void InitializeUI()
     {
-        Text = $"CNC-MES 스마트 현장 터미널 v1.4.9 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
+        Text = $"CNC-MES 스마트 현장 터미널 v1.5.0 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
         Size = new Size(1600, 960);
         MinimumSize = new Size(1280, 720);
         StartPosition = FormStartPosition.CenterScreen;
@@ -218,7 +219,7 @@ public class WorkflowMainForm : Form
         pnlBrand.Controls.Add(pnlIcon);
 
         var lblBrand = new Label { Text = "CNC-MES", Location = new Point(44, 8), Font = new Font("맑은 고딕", 12f, FontStyle.Bold), ForeColor = Color.White, AutoSize = true };
-        var lblVer = new Label { Text = "v1.4.9 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
+        var lblVer = new Label { Text = "v1.5.0 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
         var lblStatus = new Label { Text = "● 서버 정상", Location = new Point(245, 11), Font = new Font("맑은 고딕", 8f, FontStyle.Bold), ForeColor = Palette.Green, BackColor = Color.FromArgb(80, 6, 78, 59), AutoSize = true, Padding = new Padding(5, 1, 5, 1) };
         var lblSub = new Label { Text = "WORKFLOW-BASED OPERATOR CONTROL SYSTEM", Location = new Point(45, 30), Font = new Font("Consolas", 7.2f), ForeColor = Palette.TextSlate400, AutoSize = true };
         pnlBrand.Controls.AddRange(new Control[] { lblBrand, lblVer, lblStatus, lblSub });
@@ -577,8 +578,17 @@ public class WorkflowMainForm : Form
         _btnToggleTimelineGuides.Font = new Font("맑은 고딕", 8f, FontStyle.Bold);
         _btnToggleTimelineGuides.Click += (s, e) => ToggleTimelineGuides();
 
+        _btnTimelineBaseConfig = CreateFlatButton("⏱ 기준: 공정맞춤 ▾", Palette.Bg800, Color.FromArgb(56, 189, 248), 135, 28);
+        _btnTimelineBaseConfig.Font = new Font("맑은 고딕", 8f, FontStyle.Bold);
+        _btnTimelineBaseConfig.Click += (s, e) => ShowTimelineBaseMenu(_btnTimelineBaseConfig);
+
         var btnTimelineTop = CreateFlatButton("⏱ 타임라인 정렬", Palette.Bg800, Color.FromArgb(14, 165, 233), 110, 28);
-        btnTimelineTop.Click += (s, e) => _canvas.ArrangeByTimeline();
+        btnTimelineTop.Click += (s, e) =>
+        {
+            _canvas.ArrangeByTimeline(autoFitBaseHour: !_canvas.CustomTimelineBaseHour.HasValue);
+            UpdateTimelineBaseButtonText();
+            AutoSaveWorkflow();
+        };
 
         // Bottom History Toggle Button
         _btnToggleBottom = CreateFlatButton("🔽 하단창 숨기기", Palette.Bg800, Palette.AccentSky, 140, 28);
@@ -587,7 +597,7 @@ public class WorkflowMainForm : Form
         canvasToolbar.Controls.AddRange(new Control[]
         {
             btnAddPrep, btnAddMach, btnAddInsp, btnAddCollab, btnAddPost, btnAddIssue,
-            divTool, btnAddTitleGroup, _btnToggleTimelineGuides, btnTimelineTop, btnZoomReset, btnSelectAll, _btnToggleBottom
+            divTool, btnAddTitleGroup, _btnToggleTimelineGuides, _btnTimelineBaseConfig, btnTimelineTop, btnZoomReset, btnSelectAll, _btnToggleBottom
         });
 
         // Canvas Control
@@ -1299,6 +1309,154 @@ public class WorkflowMainForm : Form
             _btnToggleTimelineGuides.BackColor = _canvas.ShowTimelineGuides ? Color.FromArgb(16, 185, 129) : Palette.Bg800;
         }
         _canvas.Invalidate();
+    }
+
+    private void ShowTimelineBaseMenu(Control anchor)
+    {
+        var cms = new ContextMenuStrip();
+        cms.BackColor = Color.FromArgb(15, 23, 42);
+        cms.ForeColor = Color.White;
+
+        double currentBase = _canvas.GetEffectiveTimelineBaseHour();
+
+        var mAuto = cms.Items.Add($"🎯 공정 시작시간에 자동 맞춤 (현재 {currentBase:00}:00 기준)");
+        mAuto.Font = new Font("맑은 고딕", 8.5f, FontStyle.Bold);
+        mAuto.Click += (s, e) =>
+        {
+            _canvas.CustomTimelineBaseHour = null;
+            _canvas.ArrangeByTimeline(autoFitBaseHour: true);
+            UpdateTimelineBaseButtonText();
+            _canvas.Invalidate();
+            AutoSaveWorkflow();
+        };
+
+        cms.Items.Add(new ToolStripSeparator());
+
+        var mNow = cms.Items.Add($"🕒 현재 시각 기준 맞춤 ({DateTime.Now.Hour:00}:00)");
+        mNow.Click += (s, e) =>
+        {
+            _canvas.CustomTimelineBaseHour = (double)DateTime.Now.Hour;
+            _canvas.ArrangeByTimeline(autoFitBaseHour: false);
+            UpdateTimelineBaseButtonText();
+            _canvas.Invalidate();
+            AutoSaveWorkflow();
+        };
+
+        cms.Items.Add(new ToolStripSeparator());
+
+        int[] presetHours = { 6, 8, 9, 13, 14, 16, 18, 20 };
+        foreach (int h in presetHours)
+        {
+            var item = cms.Items.Add($"   {h:00}:00 부터 정렬");
+            int capturedH = h;
+            item.Click += (s, e) =>
+            {
+                _canvas.CustomTimelineBaseHour = capturedH;
+                _canvas.ArrangeByTimeline(autoFitBaseHour: false);
+                UpdateTimelineBaseButtonText();
+                _canvas.Invalidate();
+                AutoSaveWorkflow();
+            };
+        }
+
+        cms.Items.Add(new ToolStripSeparator());
+
+        var mCustom = cms.Items.Add("✏️ 시작 시간 직접 입력 (예: 16:00)...");
+        mCustom.Click += (s, e) => PromptCustomTimelineBaseHour();
+
+        cms.Show(anchor, new Point(0, anchor.Height));
+    }
+
+    private void UpdateTimelineBaseButtonText()
+    {
+        if (_btnTimelineBaseConfig == null) return;
+        double eff = _canvas.GetEffectiveTimelineBaseHour();
+        if (_canvas.CustomTimelineBaseHour.HasValue)
+            _btnTimelineBaseConfig.Text = $"⏱ 기준: {_canvas.CustomTimelineBaseHour.Value:00}:00 ▾";
+        else
+            _btnTimelineBaseConfig.Text = $"⏱ 기준: 자동({eff:00}:00) ▾";
+    }
+
+    private void PromptCustomTimelineBaseHour()
+    {
+        using var form = new Form
+        {
+            Text = "⏱ 타임라인 기준 시작 시간 직접 설정",
+            Size = new Size(380, 180),
+            StartPosition = FormStartPosition.CenterParent,
+            BackColor = Color.FromArgb(15, 23, 42),
+            ForeColor = Color.White,
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            MaximizeBox = false,
+            MinimizeBox = false,
+            Font = new Font("맑은 고딕", 9f)
+        };
+
+        var lbl = new Label
+        {
+            Text = "타임라인을 정렬할 기준 시작 시각을 입력하세요 (예: 16:00, 14:30):",
+            Dock = DockStyle.Top,
+            Height = 35,
+            Padding = new Padding(12, 10, 12, 0)
+        };
+
+        var txt = new TextBox
+        {
+            Text = $"{_canvas.GetEffectiveTimelineBaseHour():00}:00",
+            Location = new Point(16, 50),
+            Width = 330,
+            Font = new Font("맑은 고딕", 10.5f),
+            BackColor = Color.FromArgb(30, 41, 59),
+            ForeColor = Color.White,
+            BorderStyle = BorderStyle.FixedSingle
+        };
+
+        var btnOk = new Button
+        {
+            Text = "적용 및 정렬",
+            DialogResult = DialogResult.OK,
+            Location = new Point(140, 95),
+            Width = 110,
+            Height = 32,
+            BackColor = Color.FromArgb(14, 165, 233),
+            ForeColor = Color.White,
+            FlatStyle = FlatStyle.Flat
+        };
+        btnOk.FlatAppearance.BorderSize = 0;
+
+        var btnCancel = new Button
+        {
+            Text = "취소",
+            DialogResult = DialogResult.Cancel,
+            Location = new Point(260, 95),
+            Width = 85,
+            Height = 32,
+            BackColor = Color.FromArgb(51, 65, 85),
+            ForeColor = Color.White,
+            FlatStyle = FlatStyle.Flat
+        };
+        btnCancel.FlatAppearance.BorderSize = 0;
+
+        form.Controls.AddRange(new Control[] { lbl, txt, btnOk, btnCancel });
+        form.AcceptButton = btnOk;
+        form.CancelButton = btnCancel;
+
+        if (form.ShowDialog(this) == DialogResult.OK)
+        {
+            double? parsed = WorkflowCanvasControl.ParseTimeString(txt.Text);
+            if (parsed.HasValue)
+            {
+                _canvas.CustomTimelineBaseHour = parsed.Value;
+                _canvas.ArrangeByTimeline(autoFitBaseHour: false);
+                UpdateTimelineBaseButtonText();
+                _canvas.Invalidate();
+                AutoSaveWorkflow();
+            }
+            else
+            {
+                MessageBox.Show("올바른 시간 형식(HH:mm)을 입력해주세요.", "입력 오류", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
     }
 
     private void PromptEditTitleBox(WorkflowTitleBox box)

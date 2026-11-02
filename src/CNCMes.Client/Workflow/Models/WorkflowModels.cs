@@ -126,6 +126,13 @@ public class WorkflowTitleBox
     [JsonIgnore]
     public RectangleF AutoFitButtonBounds => new(X + Width - 88f, Y + 5f, 68f, 22f);
 
+    public bool ContainsNode(WorkflowNode node)
+    {
+        float cx = node.X + (node.Width / 2f);
+        float cy = node.Y + (node.Height / 2f);
+        return Bounds.Contains(cx, cy);
+    }
+
     public void AutoFit(IEnumerable<WorkflowNode> nodes)
     {
         var list = nodes.ToList();

@@ -30,6 +30,42 @@ public class WorkflowCanvasControl : UserControl
     public List<WorkflowEdge> Edges { get; } = new();
     public List<WorkflowTitleBox> TitleBoxes { get; } = new();
     public bool ShowTimelineGuides { get; set; } = true;
+    public double? CustomTimelineBaseHour { get; set; } = null;
+    public float PixelsPerHour { get; set; } = 280f;
+
+    public static double? ParseTimeString(string? timeStr)
+    {
+        if (string.IsNullOrWhiteSpace(timeStr)) return null;
+        var parts = timeStr.Trim().Split(new[] { ':', '시', ' ', '-', '~' }, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 2 && double.TryParse(parts[0], out double h) && double.TryParse(parts[1].Replace("분", "").Trim(), out double m))
+        {
+            return h + (m / 60.0);
+        }
+        if (parts.Length == 1 && double.TryParse(parts[0].Replace("시", "").Trim(), out double onlyH))
+        {
+            return onlyH;
+        }
+        return null;
+    }
+
+    public double GetEffectiveTimelineBaseHour()
+    {
+        if (CustomTimelineBaseHour.HasValue)
+            return CustomTimelineBaseHour.Value;
+
+        var validTimes = Nodes
+            .Select(n => ParseTimeString(n.StartTime))
+            .Where(t => t.HasValue)
+            .Select(t => t!.Value)
+            .ToList();
+
+        if (validTimes.Count > 0)
+        {
+            return Math.Floor(validTimes.Min());
+        }
+
+        return Math.Max(0, (double)DateTime.Now.Hour);
+    }
     public event Action<WorkflowTitleBox>? TitleBoxDoubleClicked;
 
     private WorkflowTitleBox? _selectedTitleBox;
@@ -340,89 +376,175 @@ public class WorkflowCanvasControl : UserControl
     /// <summary>
     /// 노드의 [시작시간]과 [설비(MachineId)]에 맞춰 행과 열을 계산하여 타임라인 형태로 칼각 정렬
     /// </summary>
-    public void ArrangeByTimeline()
+    /// <summary>
+    /// 기존 노드들의 형태(Y축 레이아웃, 상하 배치 구조)를 보존하면서 각 노드의 [시작시간]에 맞춰 X좌표를 타임라인 칼각 정렬
+    /// </summary>
+    public void ArrangeByTimeline(bool autoFitBaseHour = true)
     {
         if (Nodes.Count == 0) return;
 
-        static double ParseTime(string timeStr, double defaultVal)
+        // 1. 이미 입력된 유효한 StartTime들을 먼저 탐색
+        var validStartTimes = Nodes
+            .Select(n => ParseTimeString(n.StartTime))
+            .Where(t => t.HasValue)
+            .Select(t => t!.Value)
+            .ToList();
+
+        // 기준 시간 결정 (가공시간이 16시면 16시에 맞게 타임라인이 정렬)
+        double baseTime;
+        if (CustomTimelineBaseHour.HasValue && !autoFitBaseHour)
         {
-            if (string.IsNullOrWhiteSpace(timeStr)) return defaultVal;
-            var parts = timeStr.Trim().Split(':', '시', ' ');
-            if (parts.Length >= 2 && double.TryParse(parts[0], out double h) && double.TryParse(parts[1].Replace("분", ""), out double m))
-            {
-                return h + (m / 60.0);
-            }
-            if (double.TryParse(timeStr, out double onlyH)) return onlyH;
-            return defaultVal;
+            baseTime = CustomTimelineBaseHour.Value;
+        }
+        else if (validStartTimes.Count > 0)
+        {
+            baseTime = Math.Floor(validStartTimes.Min());
+            CustomTimelineBaseHour = baseTime;
+        }
+        else
+        {
+            baseTime = Math.Floor((double)DateTime.Now.Hour);
+            CustomTimelineBaseHour = baseTime;
         }
 
-        // 1. Assign sequential times to nodes missing StartTime
-        double curTime = 8.5; // Start at 08:30 AM
+        // 2. 시간이 비어있는 노드들에 대해, 연결(Edge) 관계를 기반으로 시간 스마트 추정
+        double defaultDuration = 0.5; // 30분 기본 가공
+        double runningTime = baseTime;
+
+        var inDegree = Nodes.ToDictionary(n => n.Id, n => 0);
+        foreach (var edge in Edges)
+        {
+            if (inDegree.ContainsKey(edge.ToNodeId))
+                inDegree[edge.ToNodeId]++;
+        }
+
+        var queue = new Queue<WorkflowNode>(Nodes.Where(n => inDegree[n.Id] == 0));
+        var visited = new HashSet<string>();
+
+        while (queue.Count > 0)
+        {
+            var node = queue.Dequeue();
+            visited.Add(node.Id);
+
+            double? tStart = ParseTimeString(node.StartTime);
+            if (!tStart.HasValue)
+            {
+                var incomingEdges = Edges.Where(e => e.ToNodeId == node.Id).ToList();
+                double prevEnd = baseTime;
+                foreach (var ie in incomingEdges)
+                {
+                    var parentNode = Nodes.FirstOrDefault(n => n.Id == ie.FromNodeId);
+                    if (parentNode != null)
+                    {
+                        double? pe = ParseTimeString(parentNode.EndTime) ?? (ParseTimeString(parentNode.StartTime) + defaultDuration);
+                        if (pe.HasValue && pe.Value > prevEnd)
+                            prevEnd = pe.Value;
+                    }
+                }
+
+                double calcStart = Math.Max(runningTime, prevEnd);
+                int sh = (int)calcStart;
+                int sm = (int)Math.Round((calcStart - sh) * 60);
+                node.StartTime = $"{sh:D2}:{sm:D2}";
+
+                double calcEnd = calcStart + defaultDuration;
+                int eh = (int)calcEnd;
+                int em = (int)Math.Round((calcEnd - eh) * 60);
+                node.EndTime = $"{eh:D2}:{em:D2}";
+
+                runningTime = calcEnd;
+            }
+            else
+            {
+                double? tEnd = ParseTimeString(node.EndTime);
+                if (!tEnd.HasValue)
+                {
+                    double calcEnd = tStart.Value + defaultDuration;
+                    int eh = (int)calcEnd;
+                    int em = (int)Math.Round((calcEnd - eh) * 60);
+                    node.EndTime = $"{eh:D2}:{em:D2}";
+                }
+                runningTime = Math.Max(runningTime, (ParseTimeString(node.EndTime) ?? (tStart.Value + defaultDuration)));
+            }
+
+            foreach (var edge in Edges.Where(e => e.FromNodeId == node.Id))
+            {
+                if (inDegree.ContainsKey(edge.ToNodeId))
+                {
+                    inDegree[edge.ToNodeId]--;
+                    if (inDegree[edge.ToNodeId] == 0 && !visited.Contains(edge.ToNodeId))
+                    {
+                        var nextNode = Nodes.FirstOrDefault(n => n.Id == edge.ToNodeId);
+                        if (nextNode != null) queue.Enqueue(nextNode);
+                    }
+                }
+            }
+        }
+
+        foreach (var node in Nodes.Where(n => !visited.Contains(n.Id)))
+        {
+            if (!ParseTimeString(node.StartTime).HasValue)
+            {
+                int sh = (int)runningTime;
+                int sm = (int)Math.Round((runningTime - sh) * 60);
+                node.StartTime = $"{sh:D2}:{sm:D2}";
+
+                double calcEnd = runningTime + defaultDuration;
+                int eh = (int)calcEnd;
+                int em = (int)Math.Round((calcEnd - eh) * 60);
+                node.EndTime = $"{eh:D2}:{em:D2}";
+
+                runningTime = calcEnd;
+            }
+        }
+
+        // 3. 기존 형태(Y좌표)는 100% 보존하고, X좌표만 시간에 맞게 정렬!
+        float startX = 60f;
+        float pixelsPerHour = PixelsPerHour;
+
         foreach (var node in Nodes)
         {
-            if (string.IsNullOrWhiteSpace(node.StartTime))
-            {
-                int h = (int)curTime;
-                int m = (int)Math.Round((curTime - h) * 60);
-                node.StartTime = $"{h:D2}:{m:D2}";
+            double nodeStart = ParseTimeString(node.StartTime) ?? baseTime;
+            float targetX = startX + (float)((nodeStart - baseTime) * pixelsPerHour);
+            node.X = Math.Max(40f, targetX);
+            // 중요: node.Y는 기존 배치 형태를 100% 보존하여 절대 일자로 덮어쓰지 않습니다!
+        }
 
-                double endT = curTime + 1.0;
-                int eh = (int)endT;
-                int em = (int)Math.Round((endT - eh) * 60);
-                node.EndTime = $"{eh:D2}:{em:D2}";
-                curTime += 1.0;
+        // 4. 동일한 Y 높이 레벨(오차 65px 이내)에 위치한 노드들 간의 가로 겹침 방지 (최소 간격 25px)
+        var sortedByX = Nodes.OrderBy(n => n.X).ToList();
+        for (int i = 0; i < sortedByX.Count; i++)
+        {
+            for (int j = i + 1; j < sortedByX.Count; j++)
+            {
+                var nA = sortedByX[i];
+                var nB = sortedByX[j];
+
+                if (Math.Abs(nA.Y - nB.Y) < 65f)
+                {
+                    float minAllowedX = nA.X + nA.Width + 25f;
+                    if (nB.X < minAllowedX)
+                    {
+                        nB.X = minAllowedX;
+                    }
+                }
             }
         }
 
-        // 2. Identify and prioritize Machine rows (Lanes)
-        var priorityOrder = new List<string> { "R01", "R02", "R03", "R04", "측정실", "세척실", "품질팀" };
-        var machines = Nodes.Select(n => string.IsNullOrEmpty(n.MachineId) ? "R01" : n.MachineId).Distinct().ToList();
-        machines.Sort((a, b) =>
+        // 5. 타이틀 그룹 박스 영역 자동 갱신 (내부 노드들이 이동했으므로 박스 영역 자동 동기화)
+        foreach (var box in TitleBoxes)
         {
-            int idxA = priorityOrder.IndexOf(a);
-            int idxB = priorityOrder.IndexOf(b);
-            if (idxA >= 0 && idxB >= 0) return idxA.CompareTo(idxB);
-            if (idxA >= 0) return -1;
-            if (idxB >= 0) return 1;
-            return string.Compare(a, b, StringComparison.Ordinal);
-        });
-
-        var machineRows = new Dictionary<string, int>();
-        for (int i = 0; i < machines.Count; i++)
-        {
-            machineRows[machines[i]] = i;
-        }
-
-        // 3. Find global min time to establish timeline baseline (X=0)
-        double minTime = Nodes.Min(n => ParseTime(n.StartTime, 8.5));
-        double baseTime = Math.Floor(minTime); // e.g. 8.0
-
-        float startX = 60f;
-        float pixelsPerHour = 240f; // 1 hour = 240px width
-        float rowHeight = 160f;
-        float startY = 80f;
-
-        // 4. Position nodes by Machine Row and Time Column
-        foreach (var mach in machines)
-        {
-            int rowIdx = machineRows[mach];
-            float y = startY + (rowIdx * rowHeight);
-
-            var machNodes = Nodes.Where(n => (string.IsNullOrEmpty(n.MachineId) ? "R01" : n.MachineId) == mach)
-                                 .OrderBy(n => ParseTime(n.StartTime, 8.5))
-                                 .ToList();
-
-            float lastRight = startX - 20f;
-            foreach (var node in machNodes)
+            var insideNodes = Nodes.Where(n => box.ContainsNode(n)).ToList();
+            if (insideNodes.Count > 0)
             {
-                double nodeTime = ParseTime(node.StartTime, 8.5);
-                float desiredX = startX + (float)((nodeTime - baseTime) * pixelsPerHour);
+                float minX = insideNodes.Min(n => n.X) - 30;
+                float minY = insideNodes.Min(n => n.Y) - 50;
+                float maxX = insideNodes.Max(n => n.X + n.Width) + 30;
+                float maxY = insideNodes.Max(n => n.Y + n.Height) + 30;
 
-                // Prevent collision on same machine lane
-                float actualX = Math.Max(desiredX, lastRight + 30f);
-                node.X = actualX;
-                node.Y = y;
-                lastRight = actualX + node.Width;
+                box.X = Math.Max(20, minX);
+                box.Y = Math.Max(20, minY);
+                box.Width = Math.Max(220, maxX - box.X);
+                box.Height = Math.Max(120, maxY - box.Y);
             }
         }
 
@@ -430,7 +552,6 @@ public class WorkflowCanvasControl : UserControl
         Invalidate();
         WorkflowChanged?.Invoke();
     }
-
     // =========================================================================
 
     public WorkflowTitleBox WrapNodesWithTitleBox(string title = "공정 그룹군", string colorHex = "#0284c7")
@@ -611,20 +732,9 @@ public class WorkflowCanvasControl : UserControl
     {
         if (Nodes.Count == 0 && TitleBoxes.Count == 0) return;
 
-        static double ParseTime(string timeStr, double defaultVal)
-        {
-            if (string.IsNullOrWhiteSpace(timeStr)) return defaultVal;
-            var parts = timeStr.Trim().Split(':', ' ', '-');
-            if (parts.Length >= 2 && double.TryParse(parts[0], out double h) && double.TryParse(parts[1], out double m))
-                return h + (m / 60.0);
-            if (double.TryParse(timeStr, out double onlyH)) return onlyH;
-            return defaultVal;
-        }
-
-        double minTime = Nodes.Count > 0 ? Nodes.Min(n => ParseTime(n.StartTime, 8.5)) : 8.0;
-        double baseTime = Math.Floor(minTime);
+        double baseTime = GetEffectiveTimelineBaseHour();
         float startX = 60f;
-        float pixelsPerHour = 240f;
+        float pixelsPerHour = PixelsPerHour;
 
         float worldTop = -_panOffset.Y / _zoom;
         float worldBottom = worldTop + Height / _zoom;
@@ -635,6 +745,7 @@ public class WorkflowCanvasControl : UserControl
 
         using var fontHour = new Font("Consolas", 8.2f, FontStyle.Bold);
         using var fontHalf = new Font("Consolas", 7.2f);
+        using var fontNow = new Font("맑은 고딕", 7.5f, FontStyle.Bold);
         using var linePenHour = new Pen(Color.FromArgb(45, 56, 189, 248), 1f) { DashStyle = DashStyle.Dash };
         using var linePenHalf = new Pen(Color.FromArgb(18, 56, 189, 248), 1f) { DashStyle = DashStyle.Dot };
         using var rulerBg = new SolidBrush(Color.FromArgb(235, 15, 23, 42));
@@ -642,20 +753,28 @@ public class WorkflowCanvasControl : UserControl
         using var textSky = new SolidBrush(Color.FromArgb(56, 189, 248));
         using var textSlate = new SolidBrush(Color.FromArgb(148, 163, 184));
 
-        for (int h = 6; h <= 22; h++)
+        int minH = (int)Math.Floor(baseTime + (worldLeft - startX - 100f) / pixelsPerHour);
+        int maxH = (int)Math.Ceiling(baseTime + (worldRight - startX + 100f) / pixelsPerHour);
+        minH = Math.Max(0, minH);
+        maxH = Math.Min(48, maxH);
+
+        for (int h = minH; h <= maxH; h++)
         {
             float hourX = startX + (float)((h - baseTime) * pixelsPerHour);
             float halfX = hourX + (0.5f * pixelsPerHour);
+
+            int displayHour = h % 24;
+            string daySuffix = h >= 24 ? " (+1일)" : "";
 
             // Hour Line & Top Badge
             if (hourX >= worldLeft - 60 && hourX <= worldRight + 60)
             {
                 g.DrawLine(linePenHour, hourX, worldTop, hourX, worldBottom);
 
-                var badgeRect = new RectangleF(hourX - 30f, rulerY, 60f, 20f);
+                var badgeRect = new RectangleF(hourX - 32f, rulerY, 64f, 20f);
                 DrawRoundedRectangle(g, rulerBg, rulerBorder, badgeRect, 4f);
                 var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-                g.DrawString($"{h:D2}:00", fontHour, textSky, badgeRect, sf);
+                g.DrawString($"{displayHour:D2}:00{daySuffix}", fontHour, textSky, badgeRect, sf);
             }
 
             // Half-hour Line
@@ -668,8 +787,24 @@ public class WorkflowCanvasControl : UserControl
                 g.DrawString($":30", fontHalf, textSlate, halfBadgeRect, sf);
             }
         }
-    }
 
+        // 현재 시간 실시간 인디케이터 라인 (NOW Guide Line)
+        DateTime now = DateTime.Now;
+        double nowHour = now.Hour + (now.Minute / 60.0);
+        float nowX = startX + (float)((nowHour - baseTime) * pixelsPerHour);
+        if (nowX >= worldLeft - 60 && nowX <= worldRight + 60)
+        {
+            using var penNow = new Pen(Color.FromArgb(239, 68, 68), 1.5f) { DashStyle = DashStyle.DashDot };
+            using var brushNowBg = new SolidBrush(Color.FromArgb(220, 239, 68, 68));
+            using var sfCenter = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+
+            g.DrawLine(penNow, nowX, worldTop, nowX, worldBottom);
+
+            var nowBadgeRect = new RectangleF(nowX - 42f, rulerY + 22f, 84f, 18f);
+            DrawRoundedRectangle(g, brushNowBg, penNow, nowBadgeRect, 3f);
+            g.DrawString($"NOW {now:HH:mm}", fontNow, Brushes.White, nowBadgeRect, sfCenter);
+        }
+    }
     private void DrawTitleBoxes(Graphics g)
     {
         if (TitleBoxes.Count == 0) return;
