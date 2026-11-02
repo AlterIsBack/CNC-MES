@@ -282,7 +282,7 @@ static void PrintBanner(int port, List<string> localIps, string machineName)
 {
     Console.ForegroundColor = ConsoleColor.Cyan;
     Console.WriteLine("=================================================================");
-    Console.WriteLine("   CNC-MES 통합 생산관리 서버 (CNCMes.Server v1.4.0)");
+    Console.WriteLine("   CNC-MES 통합 생산관리 서버 (CNCMes.Server v1.4.1)");
     Console.WriteLine("=================================================================");
     Console.ResetColor();
     Console.WriteLine($"  컴퓨터 이름 : {machineName}");

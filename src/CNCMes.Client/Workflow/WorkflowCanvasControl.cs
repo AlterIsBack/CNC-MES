@@ -28,6 +28,10 @@ public class WorkflowCanvasControl : UserControl
     public List<WorkflowNode> Nodes { get; } = new();
     public List<WorkflowEdge> Edges { get; } = new();
 
+    // Workflow Confirmation Status
+    public bool IsWorkflowConfirmed { get; set; } = false;
+    public string ConfirmedInfoText { get; set; } = "";
+
     public event Action<WorkflowNode?>? NodeSelected;
     public event Action<WorkflowEdge?>? EdgeSelected;
     public event Action<WorkflowNode>? NodeDoubleClicked;
@@ -281,6 +285,7 @@ public class WorkflowCanvasControl : UserControl
         }
 
         DrawCutButtonOverlay(g);
+        DrawConfirmedBadgeOverlay(g);
         DrawHudOverlay(g);
     }
 
@@ -635,6 +640,30 @@ public class WorkflowCanvasControl : UserControl
         g.DrawEllipse(pen, r);
     }
 
+    private void DrawConfirmedBadgeOverlay(Graphics g)
+    {
+        if (!IsWorkflowConfirmed) return;
+
+        string badgeTitle = "🔒 [계획 확정 완료]";
+        string badgeDetail = string.IsNullOrEmpty(ConfirmedInfoText) ? "중앙 서버 동기화됨" : ConfirmedInfoText;
+        string fullText = $"{badgeTitle} {badgeDetail}";
+
+        using var font = new Font("맑은 고딕", 9.2f, FontStyle.Bold);
+        var size = g.MeasureString(fullText, font);
+
+        float x = 16f;
+        float y = 14f;
+        var rect = new RectangleF(x, y, size.Width + 24f, size.Height + 12f);
+
+        using var bg = new SolidBrush(Color.FromArgb(230, 6, 78, 59)); // Rich emerald green
+        using var border = new Pen(Color.FromArgb(16, 185, 129), 1.8f);
+        DrawRoundedRectangle(g, bg, border, rect, 6f);
+
+        using var brush = new SolidBrush(Color.FromArgb(240, 253, 244)); // Crisp white-green
+        var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+        g.DrawString(fullText, font, brush, rect, sf);
+    }
+
     private void DrawHudOverlay(Graphics g)
     {
         string hudText = $"노드: {Nodes.Count}개 | 연결: {Edges.Count}개 | 줌: {(int)(_zoom * 100)}% | [연결선 클릭 후 Del 키로 끊기]";
@@ -872,13 +901,20 @@ public class WorkflowCanvasControl : UserControl
         var hitNode = Nodes.AsEnumerable().Reverse().FirstOrDefault(n => n.Bounds.Contains(worldPt));
         var hitEdge = HitTestEdge(worldPt);
 
-        var menu = new ContextMenuStrip();
-        menu.Renderer = new ToolStripProfessionalRenderer(new DarkColorTable());
+        var menu = new ContextMenuStrip
+        {
+            ShowImageMargin = false,
+            BackColor = Color.FromArgb(15, 27, 49),
+            ForeColor = Color.White,
+            Font = new Font("맑은 고딕", 9.5f, FontStyle.Bold),
+            Renderer = new DarkContextMenuRenderer()
+        };
 
         if (hitEdge != null)
         {
             SelectedEdge = hitEdge;
             var itemCut = menu.Items.Add("✂ 이 연결선 끊기 (Delete)");
+            itemCut.ForeColor = Color.FromArgb(254, 202, 202); // Soft red
             itemCut.Click += (s, ev) => RemoveEdge(hitEdge);
         }
         else if (hitNode != null)
@@ -886,44 +922,88 @@ public class WorkflowCanvasControl : UserControl
             SelectedNode = hitNode;
             
             var itemCutIn = menu.Items.Add("✂ 이전 공정과의 연결 끊기 (앞쪽)");
+            itemCutIn.ForeColor = Color.White;
             itemCutIn.Click += (s, ev) => RemoveEdgesForNode(hitNode, incoming: true, outgoing: false);
 
             var itemCutOut = menu.Items.Add("✂ 다음 공정과의 연결 끊기 (뒤쪽)");
+            itemCutOut.ForeColor = Color.White;
             itemCutOut.Click += (s, ev) => RemoveEdgesForNode(hitNode, incoming: false, outgoing: true);
 
-            var itemCutAll = menu.Items.Add("✂ 앞뒤 모든 연결 끊기");
+            var itemCutAll = menu.Items.Add("✂ 앞뒤 모든 연결선 끊기");
+            itemCutAll.ForeColor = Color.FromArgb(254, 240, 138); // Yellow highlight
             itemCutAll.Click += (s, ev) => RemoveEdgesForNode(hitNode, incoming: true, outgoing: true);
 
             menu.Items.Add(new ToolStripSeparator());
 
-            var itemDel = menu.Items.Add("🗑 이 노드 삭제");
+            var itemDel = menu.Items.Add("🗑 이 공정 노드 삭제");
+            itemDel.ForeColor = Color.FromArgb(252, 165, 165); // High contrast light red
             itemDel.Click += (s, ev) => RemoveNode(hitNode);
         }
         else
         {
             var itemAddMach = menu.Items.Add("➕ 가공 노드 추가");
+            itemAddMach.ForeColor = Color.FromArgb(167, 243, 208); // Soft green
             itemAddMach.Click += (s, ev) => RequestAddQuickNode?.Invoke(NodeCategory.Machining);
 
             var itemAddInsp = menu.Items.Add("➕ 검사 노드 추가");
+            itemAddInsp.ForeColor = Color.FromArgb(254, 215, 170); // Soft orange
             itemAddInsp.Click += (s, ev) => RequestAddQuickNode?.Invoke(NodeCategory.Inspection);
 
             var itemAddCollab = menu.Items.Add("➕ 서브인원 노드 추가");
+            itemAddCollab.ForeColor = Color.FromArgb(233, 213, 255); // Soft purple
             itemAddCollab.Click += (s, ev) => RequestAddQuickNode?.Invoke(NodeCategory.Collaboration);
 
             menu.Items.Add(new ToolStripSeparator());
 
-            var itemReset = menu.Items.Add("⟲ 화면 위치 초기화");
+            var itemReset = menu.Items.Add("⟲ 화면 위치 초기화 (100%)");
+            itemReset.ForeColor = Color.White;
             itemReset.Click += (s, ev) => ResetView();
         }
 
         menu.Show(this, screenPt);
     }
 
+    private class DarkContextMenuRenderer : ToolStripProfessionalRenderer
+    {
+        public DarkContextMenuRenderer() : base(new DarkColorTable()) { }
+
+        protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
+        {
+            // Crisp high-contrast colors: Selected gets bright golden yellow, unselected gets custom ForeColor or white
+            e.TextColor = e.Item.Selected ? Color.FromArgb(254, 240, 138) : (e.Item.ForeColor != Color.Empty ? e.Item.ForeColor : Color.White);
+            base.OnRenderItemText(e);
+        }
+
+        protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
+        {
+            if (e.Item.Selected)
+            {
+                using var brush = new SolidBrush(Color.FromArgb(30, 58, 102));
+                using var borderPen = new Pen(Color.FromArgb(56, 189, 248), 1.5f);
+                var rect = new Rectangle(2, 1, e.Item.Width - 4, e.Item.Height - 2);
+                e.Graphics.FillRectangle(brush, rect);
+                e.Graphics.DrawRectangle(borderPen, rect);
+            }
+            else
+            {
+                using var brush = new SolidBrush(Color.FromArgb(15, 27, 49));
+                e.Graphics.FillRectangle(brush, e.Item.ContentRectangle);
+            }
+        }
+
+        protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs e)
+        {
+            using var pen = new Pen(Color.FromArgb(45, 65, 105), 1.2f);
+            int y = e.Item.Height / 2;
+            e.Graphics.DrawLine(pen, 6, y, e.Item.Width - 6, y);
+        }
+    }
+
     private class DarkColorTable : ProfessionalColorTable
     {
-        public override Color MenuBorder => Color.FromArgb(45, 65, 105);
-        public override Color MenuItemBorder => Color.FromArgb(14, 165, 233);
-        public override Color MenuItemSelected => Color.FromArgb(20, 35, 64);
+        public override Color MenuBorder => Color.FromArgb(56, 189, 248);
+        public override Color MenuItemBorder => Color.FromArgb(56, 189, 248);
+        public override Color MenuItemSelected => Color.FromArgb(30, 58, 102);
         public override Color ToolStripDropDownBackground => Color.FromArgb(15, 27, 49);
         public override Color ImageMarginGradientBegin => Color.FromArgb(15, 27, 49);
         public override Color ImageMarginGradientMiddle => Color.FromArgb(15, 27, 49);

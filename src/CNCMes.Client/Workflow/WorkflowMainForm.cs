@@ -68,6 +68,11 @@ public class WorkflowMainForm : Form
     private DataGridView _gridSubTasks = null!;
     private DataGridView _gridPostProcess = null!;
     private SplitContainer _centerVerticalSplitter = null!;
+    private Button _btnToggleBottom = null!;
+    private Button _btnConfirmPlan = null!;
+    private Label _lblConfirmedStatusBadge = null!;
+    private bool _isPlanConfirmed = false;
+    private DateTime? _planConfirmedAt;
 
     private System.Windows.Forms.Timer _pollTimer = null!;
 
@@ -99,7 +104,7 @@ public class WorkflowMainForm : Form
 
     private void InitializeUI()
     {
-        Text = $"CNC-MES 스마트 현장 터미널 v1.4.0 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
+        Text = $"CNC-MES 스마트 현장 터미널 v1.4.1 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
         Size = new Size(1600, 960);
         MinimumSize = new Size(1280, 720);
         StartPosition = FormStartPosition.CenterScreen;
@@ -207,7 +212,7 @@ public class WorkflowMainForm : Form
         pnlBrand.Controls.Add(pnlIcon);
 
         var lblBrand = new Label { Text = "CNC-MES", Location = new Point(44, 8), Font = new Font("맑은 고딕", 12f, FontStyle.Bold), ForeColor = Color.White, AutoSize = true };
-        var lblVer = new Label { Text = "v1.4.0 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
+        var lblVer = new Label { Text = "v1.4.1 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
         var lblStatus = new Label { Text = "● 서버 정상", Location = new Point(245, 11), Font = new Font("맑은 고딕", 8f, FontStyle.Bold), ForeColor = Palette.Green, BackColor = Color.FromArgb(80, 6, 78, 59), AutoSize = true, Padding = new Padding(5, 1, 5, 1) };
         var lblSub = new Label { Text = "WORKFLOW-BASED OPERATOR CONTROL SYSTEM", Location = new Point(45, 30), Font = new Font("Consolas", 7.2f), ForeColor = Palette.TextSlate400, AutoSize = true };
         pnlBrand.Controls.AddRange(new Control[] { lblBrand, lblVer, lblStatus, lblSub });
@@ -341,7 +346,18 @@ public class WorkflowMainForm : Form
         _btnRefreshAll.Location = new Point(100, 9);
         _btnRefreshAll.Click += async (s, e) => await RefreshAllAsync();
 
-        pnlRight.Controls.AddRange(new Control[] { _btnRefreshAll, pnlUser, _btnSwitchToClassic });
+        _lblConfirmedStatusBadge = new Label
+        {
+            Text = "🔒 [계획 확정]",
+            Font = new Font("Consolas", 8.8f, FontStyle.Bold),
+            ForeColor = Palette.Green,
+            BackColor = Color.FromArgb(70, 6, 78, 59),
+            Size = new Size(130, 32),
+            Location = new Point(0, 10),
+            TextAlign = ContentAlignment.MiddleCenter,
+            Visible = false
+        };
+        pnlRight.Controls.AddRange(new Control[] { _lblConfirmedStatusBadge, _btnRefreshAll, pnlUser, _btnSwitchToClassic });
         topBar.Controls.Add(pnlRight, 2, 0);
 
         return topBar;
@@ -385,9 +401,9 @@ public class WorkflowMainForm : Form
         btnSaveDraft.Font = new Font("맑은 고딕", 8.3f, FontStyle.Bold);
         btnSaveDraft.Click += (s, e) => SaveWorkflowDraftLocally();
 
-        var btnConfirmServer = CreateFlatButton("🌐 계획 확정·공유", Color.FromArgb(8, 47, 73), Palette.AccentSky);
-        btnConfirmServer.Font = new Font("맑은 고딕", 8.3f, FontStyle.Bold);
-        btnConfirmServer.Click += async (s, e) => await ConfirmAndShareWorkflowAsync();
+        _btnConfirmPlan = CreateFlatButton("🔒 계획 확정", Color.FromArgb(8, 47, 73), Palette.AccentSky);
+        _btnConfirmPlan.Font = new Font("맑은 고딕", 8.3f, FontStyle.Bold);
+        _btnConfirmPlan.Click += async (s, e) => await ConfirmAndShareWorkflowAsync();
 
         var btnExecuteSelected = CreateFlatButton("▶ 선택작업 실행", Color.FromArgb(5, 150, 105), Color.White);
         btnExecuteSelected.Font = new Font("맑은 고딕", 8.3f, FontStyle.Bold);
@@ -404,13 +420,14 @@ public class WorkflowMainForm : Form
             if (MessageBox.Show("현재 캔버스의 모든 노드와 연결선을 초기화하시겠습니까?", "초기화 확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
             {
                 _canvas.Clear();
+                ResetWorkflowConfirmation();
                 UpdateWorkflowStats();
             }
         };
 
         menuGrid.Controls.Add(btnGenDefault, 0, 0);
         menuGrid.Controls.Add(btnSaveDraft, 1, 0);
-        menuGrid.Controls.Add(btnConfirmServer, 0, 1);
+        menuGrid.Controls.Add(_btnConfirmPlan, 0, 1);
         menuGrid.Controls.Add(btnExecuteSelected, 1, 1);
         menuGrid.Controls.Add(btnAutoLayout, 0, 2);
         menuGrid.Controls.Add(btnClearPlan, 1, 2);
@@ -511,22 +528,23 @@ public class WorkflowMainForm : Form
         var btnZoomReset = CreateFlatButton("🔍 100%", Palette.Bg800, Palette.TextSlate300, 68, 28);
         btnZoomReset.Click += (s, e) => _canvas.ResetView();
 
-        var btnToggleBottom = CreateFlatButton("⤢ 하단 이력 접기/펼치기", Palette.Bg800, Palette.AccentSky, 150, 28);
-        btnToggleBottom.Click += (s, e) =>
-        {
-            _centerVerticalSplitter.Panel2Collapsed = !_centerVerticalSplitter.Panel2Collapsed;
-        };
+        // Bottom History Toggle Button
+        _btnToggleBottom = CreateFlatButton("🔽 하단창 숨기기", Palette.Bg800, Palette.AccentSky, 140, 28);
+        _btnToggleBottom.Click += (s, e) => SetBottomPanelCollapsed(!_centerVerticalSplitter.Panel2Collapsed);
 
         canvasToolbar.Controls.AddRange(new Control[]
         {
             btnAddPrep, btnAddMach, btnAddInsp, btnAddCollab, btnAddPost, btnAddIssue,
-            divTool, btnZoomReset, btnToggleBottom
+            divTool, btnZoomReset, _btnToggleBottom
         });
 
         // Canvas Control
         _canvas = new WorkflowCanvasControl { Dock = DockStyle.Fill, Margin = new Padding(0) };
         _canvas.NodeSelected += (node) => _detailPanel.BindNode(node);
-        _canvas.WorkflowChanged += UpdateWorkflowStats;
+        _canvas.WorkflowChanged += () =>
+        {
+            UpdateWorkflowStats();
+        };
         _canvas.RequestGenerateDefaultWorkflow += () => GenerateStandardWorkflowForSelectedPart(confirmIfNotEmpty: true);
 
         pnlCanvasContainer.Controls.Add(canvasToolbar, 0, 0);
@@ -539,9 +557,58 @@ public class WorkflowMainForm : Form
         return _centerVerticalSplitter;
     }
 
+    private void SetBottomPanelCollapsed(bool collapse)
+    {
+        _centerVerticalSplitter.Panel2Collapsed = collapse;
+        if (collapse)
+        {
+            _btnToggleBottom.Text = "🔼 하단 이력창 열기";
+            _btnToggleBottom.BackColor = Color.FromArgb(5, 150, 105);
+            _btnToggleBottom.ForeColor = Color.White;
+        }
+        else
+        {
+            _btnToggleBottom.Text = "🔽 하단창 숨기기";
+            _btnToggleBottom.BackColor = Palette.Bg800;
+            _btnToggleBottom.ForeColor = Palette.AccentSky;
+        }
+    }
+
     private Control BuildBottomHistoryTabs()
     {
-        var pnl = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Bg900, Padding = new Padding(0) };
+        var rootPanel = new Panel { Dock = DockStyle.Fill, BackColor = Palette.Bg900, Padding = new Padding(0) };
+
+        // Compact Header Bar for Bottom Panel with Hide/Collapse Button
+        var pnlBottomHeader = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 28,
+            BackColor = Color.FromArgb(15, 23, 42),
+            Padding = new Padding(8, 2, 8, 2)
+        };
+        pnlBottomHeader.Paint += (s, e) =>
+        {
+            using var pen = new Pen(Palette.Border, 1);
+            e.Graphics.DrawLine(pen, 0, pnlBottomHeader.Height - 1, pnlBottomHeader.Width, pnlBottomHeader.Height - 1);
+        };
+
+        var lblBottomTitle = new Label
+        {
+            Text = "📊 현장 장비 실시간 가공 이력 / 불량 대책 / 서브인원 / 후공정 추적",
+            Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold),
+            ForeColor = Palette.TextSlate300,
+            Dock = DockStyle.Left,
+            AutoSize = true,
+            Padding = new Padding(0, 3, 0, 0)
+        };
+
+        var btnHideBottom = CreateFlatButton("🔽 하단창 숨김 (접기) ✕", Color.FromArgb(30, 41, 59), Palette.Amber, 160, 24);
+        btnHideBottom.Dock = DockStyle.Right;
+        btnHideBottom.Font = new Font("맑은 고딕", 8f, FontStyle.Bold);
+        btnHideBottom.Click += (s, e) => SetBottomPanelCollapsed(true);
+
+        pnlBottomHeader.Controls.AddRange(new Control[] { lblBottomTitle, btnHideBottom });
+
         _bottomTabs = new TabControl
         {
             Dock = DockStyle.Fill,
@@ -566,54 +633,49 @@ public class WorkflowMainForm : Form
         // Tab 2: Defects & Countermeasures
         var tabDefects = new TabPage("💥 불량·수정·대책 히스토리") { BackColor = Palette.Bg900 };
         _gridDefects = CreateStyledGrid();
-        _gridDefects.Columns.Add("colDefId", "No");
-        _gridDefects.Columns.Add("colDefMach", "장비");
-        _gridDefects.Columns.Add("colDefPart", "작지/품목");
-        _gridDefects.Columns.Add("colDefType", "유형");
-        _gridDefects.Columns.Add("colDefDesc", "불량 및 수정 내용");
-        _gridDefects.Columns.Add("colDefCause", "발생 원인");
-        _gridDefects.Columns.Add("colDefAction", "조치 및 재발방지 대책");
-        _gridDefects.Columns.Add("colDefAuthor", "작성자/일시");
-        _gridDefects.Columns["colDefDesc"]!.FillWeight = 160;
+        _gridDefects.Columns.Add("colDefTime", "발생시각");
+        _gridDefects.Columns.Add("colDefMach", "설비");
+        _gridDefects.Columns.Add("colDefOrder", "작지/품목");
+        _gridDefects.Columns.Add("colDefType", "불량유형");
+        _gridDefects.Columns.Add("colDefReason", "원인분석");
+        _gridDefects.Columns.Add("colDefAction", "조치내용");
+        _gridDefects.Columns.Add("colDefWorker", "보고자");
+        _gridDefects.Columns["colDefReason"]!.FillWeight = 160;
         _gridDefects.Columns["colDefAction"]!.FillWeight = 160;
         tabDefects.Controls.Add(_gridDefects);
         _bottomTabs.TabPages.Add(tabDefects);
 
-        // Tab 3: Sub Worker Tasks
-        var tabSubTasks = new TabPage("👥 서브인원 작업 지시 및 보고") { BackColor = Palette.Bg900 };
+        // Tab 3: Sub-worker Dispatch History
+        var tabSub = new TabPage("👥 서브인원 작업 지시 및 보고") { BackColor = Palette.Bg900 };
         _gridSubTasks = CreateStyledGrid();
-        _gridSubTasks.Columns.Add("colSubId", "ID");
-        _gridSubTasks.Columns.Add("colSubMach", "장비");
-        _gridSubTasks.Columns.Add("colSubOrder", "작지번호");
-        _gridSubTasks.Columns.Add("colSubPart", "품명");
+        _gridSubTasks.Columns.Add("colSubTime", "지시시각");
         _gridSubTasks.Columns.Add("colSubWorker", "서브인원");
-        _gridSubTasks.Columns.Add("colSubInstr", "지시 내용");
-        _gridSubTasks.Columns.Add("colSubReport", "보고 내용");
-        _gridSubTasks.Columns.Add("colSubStatus", "상태");
-        _gridSubTasks.Columns["colSubInstr"]!.FillWeight = 180;
-        tabSubTasks.Controls.Add(_gridSubTasks);
-        _bottomTabs.TabPages.Add(tabSubTasks);
+        _gridSubTasks.Columns.Add("colSubTask", "지시내용");
+        _gridSubTasks.Columns.Add("colSubPart", "대상작지/부품");
+        _gridSubTasks.Columns.Add("colSubStatus", "진행상황");
+        _gridSubTasks.Columns["colSubTask"]!.FillWeight = 220;
+        tabSub.Controls.Add(_gridSubTasks);
+        _bottomTabs.TabPages.Add(tabSub);
 
-        // Tab 4: Post Processing
+        // Tab 4: Post-Process Tracking
         var tabPost = new TabPage("⚙ 후공정(핀/각인/후처리) 추적") { BackColor = Palette.Bg900 };
         _gridPostProcess = CreateStyledGrid();
-        _gridPostProcess.Columns.Add("colPostId", "ID");
+        _gridPostProcess.Columns.Add("colPostTime", "공정시각");
         _gridPostProcess.Columns.Add("colPostOrder", "작지번호");
-        _gridPostProcess.Columns.Add("colPostPart", "품명");
-        _gridPostProcess.Columns.Add("colPostMach", "장비");
-        _gridPostProcess.Columns.Add("colPostWorker", "작업자");
-        _gridPostProcess.Columns.Add("colPostItems", "선택 공정");
+        _gridPostProcess.Columns.Add("colPostPart", "부품명");
+        _gridPostProcess.Columns.Add("colPostType", "후공정구분");
+        _gridPostProcess.Columns.Add("colPostWorker", "담당자");
         _gridPostProcess.Columns.Add("colPostStatus", "상태");
+        _gridPostProcess.Columns["colPostType"]!.FillWeight = 140;
         tabPost.Controls.Add(_gridPostProcess);
         _bottomTabs.TabPages.Add(tabPost);
 
-        pnl.Controls.Add(_bottomTabs);
-        return pnl;
+        rootPanel.Controls.Add(_bottomTabs);
+        rootPanel.Controls.Add(pnlBottomHeader);
+
+        return rootPanel;
     }
 
-    // =========================================================================
-    // 6, 7, 9. RIGHT SIDEBAR: Node Details, Notices, Chat
-    // =========================================================================
     private Control BuildRightSidebar()
     {
         var panel = new TableLayoutPanel
@@ -1099,17 +1161,30 @@ public class WorkflowMainForm : Form
     {
         if (_canvas.Nodes.Count == 0)
         {
-            MessageBox.Show("확정할 워크플로우 노드가 없습니다. 먼저 공정을 생성해주세요.", "공정 없음", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show("확정할 워크플로우 공정이 없습니다. 먼저 공정을 생성해주세요.", "공정 없음", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
-        var confirm = MessageBox.Show(
-            $"현재 수립된 총 {_canvas.Nodes.Count}개의 공정 계획을 확정하고 중앙 서버 작업관리 시스템에 공유하시겠습니까?",
-            "계획 확정 및 서버 공유",
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Question
-        );
-        if (confirm != DialogResult.Yes) return;
+        if (_isPlanConfirmed)
+        {
+            var reconfirm = MessageBox.Show(
+                $"현재 워크플로우 계획이 이미 확정된 상태입니다.\n(확정 시각: {_planConfirmedAt:yyyy-MM-dd HH:mm})\n\n최신 변경사항으로 서버에 재확정 및 공유하시겠습니까?",
+                "계획 재확정 확인",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question
+            );
+            if (reconfirm != DialogResult.Yes) return;
+        }
+        else
+        {
+            var confirm = MessageBox.Show(
+                $"현재 수립된 총 {_canvas.Nodes.Count}개의 공정 계획을 확정하고 중앙 서버 작업관리 시스템에 공유하시겠습니까?\n\n확정 후 화면에 [🔒 계획 확정 완료] 배지가 활성화되며 실시간 작업 현황으로 반영됩니다.",
+                "워크플로우 계획 확정",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question
+            );
+            if (confirm != DialogResult.Yes) return;
+        }
 
         // 1. Save local confirmed draft
         SaveWorkflowDraftLocally(silent: true);
@@ -1133,29 +1208,71 @@ public class WorkflowMainForm : Form
                 1
             );
 
-            if (ok)
+            // Update machine prompt with confirmed status
+            await _api.UpdateMachineStatusAsync(
+                _currentMachineId,
+                "대기",
+                orderNo,
+                partName,
+                $"[계획확정] {_canvas.Nodes[0].Title} 외 {_canvas.Nodes.Count - 1}공정",
+                _session.DisplayName
+            );
+
+            // Mark confirmation state visually!
+            _isPlanConfirmed = true;
+            _planConfirmedAt = DateTime.Now;
+
+            _btnConfirmPlan.Text = "✅ 계획확정 완료";
+            _btnConfirmPlan.BackColor = Color.FromArgb(5, 150, 105);
+            _btnConfirmPlan.ForeColor = Color.White;
+
+            _canvas.IsWorkflowConfirmed = true;
+            _canvas.ConfirmedInfoText = $"{_planConfirmedAt:yyyy-MM-dd HH:mm} ({_session.DisplayName})";
+            _canvas.Invalidate();
+
+            if (_lblConfirmedStatusBadge != null)
             {
-                await LoadHistoryGridsAsync();
-                MessageBox.Show(
-                    $"[계획 확정 및 서버 공유 완료]\n\n작업지시서: {orderNo}\n대상 부품: {partName}\n공정 수: {_canvas.Nodes.Count}개\n\n중앙 서버 작업 관리 시스템에 작업 계획 확정 로그가 정상 등록되었습니다.\n(그래픽 캔버스 구조는 클라이언트 로컬 캐시에 저장되며, 서버 전체 동기화가 유지됩니다)",
-                    "서버 공유 완료",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information
-                );
+                _lblConfirmedStatusBadge.Text = $"🔒 [계획확정: {_planConfirmedAt:HH:mm}]";
+                _lblConfirmedStatusBadge.Visible = true;
             }
-            else
-            {
-                MessageBox.Show(
-                    "서버 통신에 응답이 없습니다. 네트워크 연결 또는 서버 상태를 확인 후 다시 시도해주세요.",
-                    "서버 공유 실패",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning
-                );
-            }
+
+            await LoadHistoryGridsAsync();
+
+            MessageBox.Show(
+                $"[워크플로우 계획 확정 및 서버 공유 완료]\n\n작업지시서: {orderNo}\n대상 부품: {partName}\n총 공정 수: {_canvas.Nodes.Count}개\n확정자: {_session.DisplayName}\n확정시각: {_planConfirmedAt:yyyy-MM-dd HH:mm:ss}\n\n화면에 [🔒 계획 확정 완료] 배지가 활성화되었습니다.",
+                "계획 확정 완료",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information
+            );
         }
         catch (Exception ex)
         {
             MessageBox.Show($"서버 전송 중 오류 발생: {ex.Message}", "전송 실패", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private void ResetWorkflowConfirmation()
+    {
+        _isPlanConfirmed = false;
+        _planConfirmedAt = null;
+
+        if (_btnConfirmPlan != null)
+        {
+            _btnConfirmPlan.Text = "🔒 계획 확정";
+            _btnConfirmPlan.BackColor = Color.FromArgb(8, 47, 73);
+            _btnConfirmPlan.ForeColor = Palette.AccentSky;
+        }
+
+        if (_canvas != null)
+        {
+            _canvas.IsWorkflowConfirmed = false;
+            _canvas.ConfirmedInfoText = "";
+            _canvas.Invalidate();
+        }
+
+        if (_lblConfirmedStatusBadge != null)
+        {
+            _lblConfirmedStatusBadge.Visible = false;
         }
     }
 

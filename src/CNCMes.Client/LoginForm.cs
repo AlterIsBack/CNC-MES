@@ -30,7 +30,7 @@ public class LoginForm : Form
 
     private void InitializeComponents()
     {
-        Text = "CNC-MES 현장 작업자 클라이언트 v1.4.0 (내부망 전용)";
+        Text = "CNC-MES 현장 작업자 클라이언트 v1.4.1 (내부망 전용)";
         Size = new Size(560, 580);
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -392,7 +392,7 @@ public class LoginForm : Form
             return;
         }
 
-        // Launch Modern Workflow Client Form (v1.4.0)
+        // Launch Modern Workflow Client Form (v1.4.1)
         Hide();
         var workerForm = new WorkflowMainForm(_api, session);
         workerForm.FormClosed += (s, e) => Close();
