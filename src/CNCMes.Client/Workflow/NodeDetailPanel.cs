@@ -958,6 +958,7 @@ public class NodeDetailPanel : UserControl
             _lblCurrentStatus.ForeColor = GetStatusColor(newStatus);
             UpdateStatusButtonsHighlight(newStatus);
 
+            NodeUpdated?.Invoke(_currentNode);
             StatusChangeRequested?.Invoke(_currentNode, newStatus);
         }
     }

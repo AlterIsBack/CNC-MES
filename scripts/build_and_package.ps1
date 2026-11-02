@@ -2,7 +2,7 @@
 
 param(
 
-    [string]$Version = "1.4.7"
+    [string]$Version = "1.4.8"
 
 )
 

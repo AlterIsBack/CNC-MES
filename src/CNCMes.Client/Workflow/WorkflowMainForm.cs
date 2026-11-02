@@ -107,7 +107,7 @@ public class WorkflowMainForm : Form
 
     private void InitializeUI()
     {
-        Text = $"CNC-MES 스마트 현장 터미널 v1.4.7 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
+        Text = $"CNC-MES 스마트 현장 터미널 v1.4.8 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
         Size = new Size(1600, 960);
         MinimumSize = new Size(1280, 720);
         StartPosition = FormStartPosition.CenterScreen;
@@ -216,7 +216,7 @@ public class WorkflowMainForm : Form
         pnlBrand.Controls.Add(pnlIcon);
 
         var lblBrand = new Label { Text = "CNC-MES", Location = new Point(44, 8), Font = new Font("맑은 고딕", 12f, FontStyle.Bold), ForeColor = Color.White, AutoSize = true };
-        var lblVer = new Label { Text = "v1.4.7 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
+        var lblVer = new Label { Text = "v1.4.8 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
         var lblStatus = new Label { Text = "● 서버 정상", Location = new Point(245, 11), Font = new Font("맑은 고딕", 8f, FontStyle.Bold), ForeColor = Palette.Green, BackColor = Color.FromArgb(80, 6, 78, 59), AutoSize = true, Padding = new Padding(5, 1, 5, 1) };
         var lblSub = new Label { Text = "WORKFLOW-BASED OPERATOR CONTROL SYSTEM", Location = new Point(45, 30), Font = new Font("Consolas", 7.2f), ForeColor = Palette.TextSlate400, AutoSize = true };
         pnlBrand.Controls.AddRange(new Control[] { lblBrand, lblVer, lblStatus, lblSub });
@@ -590,7 +590,7 @@ public class WorkflowMainForm : Form
         };
         _canvas.NodeDoubleClicked += (node) =>
         {
-            _detailPanel.BindNode(node);
+            OpenNodeEditDialog(node);
         };
         _canvas.WorkflowChanged += () =>
         {
@@ -1168,6 +1168,26 @@ public class WorkflowMainForm : Form
     /// 프로브카드 전용 9단계 표준 공정 템플릿 생성 및 세부지시 커스텀 필드 / 타임라인 정렬 적용
     /// (준비작업, 소재작업, 베이스판교체, 1차황삭, 1차중간측정, 2차피치정삭, 챔퍼/버제거, 최종검사, 세척포장)
     /// </summary>
+
+    private void OpenNodeEditDialog(WorkflowNode node)
+    {
+        _canvas.SelectedNode = node;
+        _detailPanel.BindNode(node);
+
+        using var dlg = new NodeEditDialog(node, _session.DisplayName);
+        if (dlg.ShowDialog(this) == DialogResult.OK)
+        {
+            _detailPanel.BindNode(node);
+            _canvas.Invalidate();
+            UpdateWorkflowStats();
+            AutoSaveWorkflow();
+
+            if (dlg.StatusChanged)
+            {
+                _ = HandleNodeStatusChangeAsync(node, node.Status);
+            }
+        }
+    }
 
     private void SaveCurrentWorkflowAsTemplate()
     {
@@ -2003,6 +2023,12 @@ public class WorkflowMainForm : Form
         {
             WorkflowNode? nextActivatedNode = null;
 
+            if (newStatus == NodeStatus.Running)
+            {
+                node.StartedAt = DateTime.Now;
+                node.StartTime = DateTime.Now.ToString("HH:mm");
+            }
+
             // When current node is Completed (1차완료 확정), advance next connected steps to Running/Inspection!
             if (newStatus == NodeStatus.Completed)
             {
@@ -2032,11 +2058,9 @@ public class WorkflowMainForm : Form
                     }
                 }
 
-                if (nextActivatedNode != null)
-                {
-                    _canvas.SelectedNode = nextActivatedNode;
-                    _detailPanel.BindNode(nextActivatedNode);
-                }
+                // Keep current completed node selected & bound so the worker immediately sees completion and end time!
+                _canvas.SelectedNode = node;
+                _detailPanel.BindNode(node);
             }
 
             string serverStatus = newStatus switch

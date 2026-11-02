@@ -1356,6 +1356,12 @@ public class WorkflowCanvasControl : UserControl
         else if (hitNode != null)
         {
             SelectedNode = hitNode;
+
+            var itemEditNode = menu.Items.Add("⚙ 공정 정보 수정 (더블클릭)");
+            itemEditNode.ForeColor = Color.FromArgb(56, 189, 248); // Sky blue
+            itemEditNode.Click += (s, ev) => NodeDoubleClicked?.Invoke(hitNode);
+
+            menu.Items.Add(new ToolStripSeparator());
             
             var itemCutIn = menu.Items.Add("✂ 이전 공정과의 연결 끊기 (앞쪽)");
             itemCutIn.ForeColor = Color.White;
