@@ -56,9 +56,9 @@ public static class TestScreenCapture
         using (var bmp = new Bitmap(1920, 1080))
         {
             form.DrawToBitmap(bmp, new Rectangle(0, 0, 1920, 1080));
-            string path = @"C:\Users\USER\.gemini\antigravity\brain\c11cfd6b-e9b4-430b-acd3-767a137025e6\workflow_probecard_timeline_v146.png";
+            string path = @"C:\Users\USER\.gemini\antigravity\brain\c11cfd6b-e9b4-430b-acd3-767a137025e6\workflow_v147_screen.png";
             bmp.Save(path, ImageFormat.Png);
-            Console.WriteLine("SAVED_PROBECARD_SCREEN: " + path);
+            Console.WriteLine("SAVED_V147_SCREEN: " + path);
         }
         form.Close();
     }

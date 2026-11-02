@@ -107,7 +107,7 @@ public class WorkflowMainForm : Form
 
     private void InitializeUI()
     {
-        Text = $"CNC-MES 스마트 현장 터미널 v1.4.6 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
+        Text = $"CNC-MES 스마트 현장 터미널 v1.4.7 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
         Size = new Size(1600, 960);
         MinimumSize = new Size(1280, 720);
         StartPosition = FormStartPosition.CenterScreen;
@@ -216,7 +216,7 @@ public class WorkflowMainForm : Form
         pnlBrand.Controls.Add(pnlIcon);
 
         var lblBrand = new Label { Text = "CNC-MES", Location = new Point(44, 8), Font = new Font("맑은 고딕", 12f, FontStyle.Bold), ForeColor = Color.White, AutoSize = true };
-        var lblVer = new Label { Text = "v1.4.6 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
+        var lblVer = new Label { Text = "v1.4.7 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
         var lblStatus = new Label { Text = "● 서버 정상", Location = new Point(245, 11), Font = new Font("맑은 고딕", 8f, FontStyle.Bold), ForeColor = Palette.Green, BackColor = Color.FromArgb(80, 6, 78, 59), AutoSize = true, Padding = new Padding(5, 1, 5, 1) };
         var lblSub = new Label { Text = "WORKFLOW-BASED OPERATOR CONTROL SYSTEM", Location = new Point(45, 30), Font = new Font("Consolas", 7.2f), ForeColor = Palette.TextSlate400, AutoSize = true };
         pnlBrand.Controls.AddRange(new Control[] { lblBrand, lblVer, lblStatus, lblSub });
@@ -389,24 +389,25 @@ public class WorkflowMainForm : Form
             Padding = new Padding(0)
         };
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 275f)); // Card 1: 8 Action Buttons (Height 275px, 4 rows)
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 265f)); // Card 1: 10 Action Buttons (Height 265px, 5 rows)
         panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));  // Card 2: Orders & Parts List (Full remaining height)
 
-        // Card 1: Workflow Menu Buttons (8 Action Buttons per spec)
+        // Card 1: Workflow Menu Buttons (10 Action Buttons: Standard, Probecard, Template Save/Load, Execution, Layout, Draft, Reset)
         var menuGrid = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 4,
-            Margin = new Padding(2, 6, 2, 2),
+            RowCount = 5,
+            Margin = new Padding(2, 4, 2, 2),
             Padding = new Padding(1)
         };
         menuGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
         menuGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
-        menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 25f));
-        menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 25f));
-        menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 25f));
-        menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 25f));
+        menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 20f));
+        menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 20f));
+        menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 20f));
+        menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 20f));
+        menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 20f));
 
         var btnGenDefault = CreateFlatButton("⚡ 기본 워크플로우", Palette.Bg800, Palette.AccentSky);
         btnGenDefault.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
@@ -415,6 +416,14 @@ public class WorkflowMainForm : Form
         var btnProbecard = CreateFlatButton("🎯 프로브카드 템플릿", Palette.Bg800, Color.FromArgb(245, 158, 11));
         btnProbecard.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
         btnProbecard.Click += (s, e) => ApplyProbecardTemplate();
+
+        var btnSaveTemplate = CreateFlatButton("💾 템플릿 저장", Palette.Bg800, Color.FromArgb(16, 185, 129));
+        btnSaveTemplate.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
+        btnSaveTemplate.Click += (s, e) => SaveCurrentWorkflowAsTemplate();
+
+        var btnLoadTemplate = CreateFlatButton("📂 템플릿 불러오기", Palette.Bg800, Color.FromArgb(168, 85, 247));
+        btnLoadTemplate.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
+        btnLoadTemplate.Click += (s, e) => OpenLoadTemplateDialog();
 
         _btnConfirmPlan = CreateFlatButton("🔒 계획 확정", Color.FromArgb(8, 47, 73), Palette.AccentSky);
         _btnConfirmPlan.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
@@ -450,12 +459,14 @@ public class WorkflowMainForm : Form
 
         menuGrid.Controls.Add(btnGenDefault, 0, 0);
         menuGrid.Controls.Add(btnProbecard, 1, 0);
-        menuGrid.Controls.Add(_btnConfirmPlan, 0, 1);
-        menuGrid.Controls.Add(btnExecuteSelected, 1, 1);
-        menuGrid.Controls.Add(btnAutoLayout, 0, 2);
-        menuGrid.Controls.Add(btnTimeline, 1, 2);
-        menuGrid.Controls.Add(btnSaveDraft, 0, 3);
-        menuGrid.Controls.Add(btnClearPlan, 1, 3);
+        menuGrid.Controls.Add(btnSaveTemplate, 0, 1);
+        menuGrid.Controls.Add(btnLoadTemplate, 1, 1);
+        menuGrid.Controls.Add(_btnConfirmPlan, 0, 2);
+        menuGrid.Controls.Add(btnExecuteSelected, 1, 2);
+        menuGrid.Controls.Add(btnAutoLayout, 0, 3);
+        menuGrid.Controls.Add(btnTimeline, 1, 3);
+        menuGrid.Controls.Add(btnSaveDraft, 0, 4);
+        menuGrid.Controls.Add(btnClearPlan, 1, 4);
         var cardMenu = CreateCard("📋 워크플로우 제어 메뉴", menuGrid);
         panel.Controls.Add(cardMenu, 0, 0);
 
@@ -1157,6 +1168,75 @@ public class WorkflowMainForm : Form
     /// 프로브카드 전용 9단계 표준 공정 템플릿 생성 및 세부지시 커스텀 필드 / 타임라인 정렬 적용
     /// (준비작업, 소재작업, 베이스판교체, 1차황삭, 1차중간측정, 2차피치정삭, 챔퍼/버제거, 최종검사, 세척포장)
     /// </summary>
+
+    private void SaveCurrentWorkflowAsTemplate()
+    {
+        if (_canvas.Nodes.Count == 0)
+        {
+            MessageBox.Show("저장할 공정 노드가 캔버스에 존재하지 않습니다.", "알림", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        string mat = _canvas.Nodes.FirstOrDefault()?.MaterialType ?? "PEEK 5T";
+        string fix = _canvas.Nodes.FirstOrDefault()?.FixingMethod ?? "바이스 고정";
+
+        using var dlg = new TemplateSaveDialog(_canvas.Nodes.Count, mat, fix);
+        if (dlg.ShowDialog(this) == DialogResult.OK)
+        {
+            try
+            {
+                TemplateManager.SaveTemplate(
+                    dlg.TemplateName,
+                    dlg.TemplateDescription,
+                    dlg.TargetMaterial,
+                    dlg.FixingMethod,
+                    _canvas.Nodes,
+                    _canvas.Edges
+                );
+                MessageBox.Show($"'{dlg.TemplateName}' 템플릿이 성공적으로 저장되었습니다.\r\n언제든 [📂 템플릿 불러오기]에서 재사용할 수 있습니다.", "템플릿 저장 완료", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"템플릿 저장 실패: {ex.Message}", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+    }
+
+    private void OpenLoadTemplateDialog()
+    {
+        using var dlg = new TemplateLoadDialog();
+        if (dlg.ShowDialog(this) == DialogResult.OK && dlg.SelectedTemplate != null)
+        {
+            var t = dlg.SelectedTemplate;
+            string orderNo = "WO-2026-001";
+            if (_cboOrders.SelectedIndex >= 0 && _cboOrders.SelectedIndex < _cachedOrders.Count)
+            {
+                orderNo = _cachedOrders[_cboOrders.SelectedIndex].GetProperty("orderNumber").GetString() ?? "WO-2026-001";
+            }
+            string partName = _lstParts.SelectedItem?.ToString() ?? t.Name;
+
+            var (newNodes, newEdges) = TemplateManager.InstantiateTemplate(t, orderNo, partName);
+
+            _canvas.Clear();
+            ResetWorkflowConfirmation();
+
+            _canvas.Nodes.AddRange(newNodes);
+            _canvas.Edges.AddRange(newEdges);
+            _canvas.ArrangeByTimeline();
+
+            _canvas.SelectedNode = _canvas.Nodes.FirstOrDefault();
+            if (_canvas.SelectedNode != null)
+            {
+                _detailPanel.BindNode(_canvas.SelectedNode);
+            }
+
+            UpdateWorkflowStats();
+            AutoSaveWorkflow();
+
+            MessageBox.Show($"'{t.Name}' ({newNodes.Count}개 공정) 템플릿이 캔버스에 적용되었습니다.", "템플릿 적용 완료", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+    }
+
     public void ApplyProbecardTemplate(string? rawPartName = null)
     {
         string orderNo = "WO-2026-001";
@@ -1197,7 +1277,8 @@ public class WorkflowMainForm : Form
             EndTime = "09:00",
             MaterialSize = "150x120x5T",
             MaterialType = "PEEK 5T",
-            Details = "[시작시간]: 08:30\r\n[종료시간]: 09:00\r\n[소재사이즈]: 150x120x5T\r\n[소재종류]: PEEK 5T\r\n- 프로브카드 도면(DWG) 치수 및 마이크로 피치 공차(±0.003) 확인\r\n- 가공 NC 프로그램 로드 및 툴 시트(Tool Sheet) 점검",
+            FixingMethod = "진공 흡착 (진공 플레이트)",
+            Details = "[시작시간]: 08:30\r\n[종료시간]: 09:00\r\n[Size]: 150x120x5T\r\n[재질]: PEEK 5T\r\n[고정방식]: 진공 흡착 (진공 플레이트)\r\n- 프로브카드 도면(DWG) 치수 및 마이크로 피치 공차(±0.003) 확인\r\n- 가공 NC 프로그램 로드 및 툴 시트(Tool Sheet) 점검",
             X = 60,
             Y = 80
         };
@@ -1216,7 +1297,8 @@ public class WorkflowMainForm : Form
             EndTime = "09:30",
             MaterialSize = "150x120x5T",
             MaterialType = "PEEK 5T",
-            Details = "[시작시간]: 09:00\r\n[종료시간]: 09:30\r\n[소재사이즈]: 150x120x5T\r\n[소재종류]: PEEK 5T\r\n- PEEK 소재 5T 정밀 평면도 측정 및 버(Burr) 사전 제거\r\n- 마이크로미터 두께 실측 검사 (5.000 ±0.005mm)",
+            FixingMethod = "진공 흡착 (진공 플레이트)",
+            Details = "[시작시간]: 09:00\r\n[종료시간]: 09:30\r\n[Size]: 150x120x5T\r\n[재질]: PEEK 5T\r\n[고정방식]: 진공 흡착 (진공 플레이트)\r\n- PEEK 소재 5T 정밀 평면도 측정 및 버(Burr) 사전 제거\r\n- 마이크로미터 두께 실측 검사 (5.000 ±0.005mm)",
             X = 300,
             Y = 80
         };
@@ -1235,7 +1317,8 @@ public class WorkflowMainForm : Form
             EndTime = "10:10",
             MaterialSize = "150x120x5T",
             MaterialType = "PEEK 5T",
-            Details = "[시작시간]: 09:30\r\n[종료시간]: 10:10\r\n[소재사이즈]: 150x120x5T\r\n[소재종류]: PEEK 5T\r\n- 전용 진공 흡착 베이스판 교체 장착 및 수평 레벨링 다이얼게이지 세팅\r\n- 공작물 원점(G54) 터치 프로브 정밀 셋업",
+            FixingMethod = "진공 흡착 (진공 플레이트)",
+            Details = "[시작시간]: 09:30\r\n[종료시간]: 10:10\r\n[Size]: 150x120x5T\r\n[재질]: PEEK 5T\r\n[고정방식]: 진공 흡착 (진공 플레이트)\r\n- 전용 진공 흡착 베이스판 교체 장착 및 수평 레벨링 다이얼게이지 세팅\r\n- 공작물 원점(G54) 터치 프로브 정밀 셋업",
             X = 540,
             Y = 80
         };
@@ -1254,7 +1337,8 @@ public class WorkflowMainForm : Form
             EndTime = "11:20",
             MaterialSize = "150x120x5T",
             MaterialType = "PEEK 5T",
-            Details = "[시작시간]: 10:10\r\n[종료시간]: 11:20\r\n[소재사이즈]: 150x120x5T\r\n[소재종류]: PEEK 5T\r\n- 전면 기준면 페이스밀링 황삭 가공 진행\r\n- 절삭유 분사 및 진공 흡착 압력 게이지 상시 모니터링",
+            FixingMethod = "진공 흡착 (진공 플레이트)",
+            Details = "[시작시간]: 10:10\r\n[종료시간]: 11:20\r\n[Size]: 150x120x5T\r\n[재질]: PEEK 5T\r\n[고정방식]: 진공 흡착 (진공 플레이트)\r\n- 전면 기준면 페이스밀링 황삭 가공 진행\r\n- 절삭유 분사 및 진공 흡착 압력 게이지 상시 모니터링",
             X = 780,
             Y = 80
         };
@@ -1273,7 +1357,8 @@ public class WorkflowMainForm : Form
             EndTime = "11:50",
             MaterialSize = "150x120x5T",
             MaterialType = "PEEK 5T",
-            Details = "[시작시간]: 11:20\r\n[종료시간]: 11:50\r\n[소재사이즈]: 150x120x5T\r\n[소재종류]: PEEK 5T\r\n- 1차 가공 후 평면도 및 기준 가이드홀 3차원 CMM 측정\r\n- 홀간 피치 누적 공차 ±0.003mm 규격 합격 판정",
+            FixingMethod = "진공 흡착 (진공 플레이트)",
+            Details = "[시작시간]: 11:20\r\n[종료시간]: 11:50\r\n[Size]: 150x120x5T\r\n[재질]: PEEK 5T\r\n[고정방식]: 진공 흡착 (진공 플레이트)\r\n- 1차 가공 후 평면도 및 기준 가이드홀 3차원 CMM 측정\r\n- 홀간 피치 누적 공차 ±0.003mm 규격 합격 판정",
             X = 1020,
             Y = 80
         };
@@ -1292,7 +1377,8 @@ public class WorkflowMainForm : Form
             EndTime = "14:30",
             MaterialSize = "150x120x5T",
             MaterialType = "PEEK 5T",
-            Details = "[시작시간]: 13:00\r\n[종료시간]: 14:30\r\n[소재사이즈]: 150x120x5T\r\n[소재종류]: PEEK 5T\r\n- 초경 0.15mm 극소경 드릴 마이크로 홀 고속 정밀가공\r\n- 80㎛ 피치 미세 패턴 가공 및 40,000 RPM 스핀들 고정밀 제어",
+            FixingMethod = "진공 흡착 (진공 플레이트)",
+            Details = "[시작시간]: 13:00\r\n[종료시간]: 14:30\r\n[Size]: 150x120x5T\r\n[재질]: PEEK 5T\r\n[고정방식]: 진공 흡착 (진공 플레이트)\r\n- 초경 0.15mm 극소경 드릴 마이크로 홀 고속 정밀가공\r\n- 80㎛ 피치 미세 패턴 가공 및 40,000 RPM 스핀들 고정밀 제어",
             X = 1260,
             Y = 80
         };
@@ -1313,7 +1399,8 @@ public class WorkflowMainForm : Form
             EndTime = "15:10",
             MaterialSize = "150x120x5T",
             MaterialType = "PEEK 5T",
-            Details = "[시작시간]: 14:30\r\n[종료시간]: 15:10\r\n[소재사이즈]: 150x120x5T\r\n[소재종류]: PEEK 5T\r\n- 40배율 광학 현미경 하에서 미세 홀 Burr 수작업 정밀 제거\r\n- 초음파 엣지 챔퍼링 수작업 마무리 손질",
+            FixingMethod = "진공 흡착 (진공 플레이트)",
+            Details = "[시작시간]: 14:30\r\n[종료시간]: 15:10\r\n[Size]: 150x120x5T\r\n[재질]: PEEK 5T\r\n[고정방식]: 진공 흡착 (진공 플레이트)\r\n- 40배율 광학 현미경 하에서 미세 홀 Burr 수작업 정밀 제거\r\n- 초음파 엣지 챔퍼링 수작업 마무리 손질",
             X = 1500,
             Y = 80
         };
@@ -1332,7 +1419,8 @@ public class WorkflowMainForm : Form
             EndTime = "16:00",
             MaterialSize = "150x120x5T",
             MaterialType = "PEEK 5T",
-            Details = "[시작시간]: 15:10\r\n[종료시간]: 16:00\r\n[소재사이즈]: 150x120x5T\r\n[소재종류]: PEEK 5T\r\n- 비접촉 광학 비전 측정기 전수 피치 및 진원도 검사\r\n- 최종 검사 성적서 발행 및 합격 필증 부착",
+            FixingMethod = "진공 흡착 (진공 플레이트)",
+            Details = "[시작시간]: 15:10\r\n[종료시간]: 16:00\r\n[Size]: 150x120x5T\r\n[재질]: PEEK 5T\r\n[고정방식]: 진공 흡착 (진공 플레이트)\r\n- 비접촉 광학 비전 측정기 전수 피치 및 진원도 검사\r\n- 최종 검사 성적서 발행 및 합격 필증 부착",
             X = 1740,
             Y = 80
         };
@@ -1351,7 +1439,8 @@ public class WorkflowMainForm : Form
             EndTime = "16:40",
             MaterialSize = "150x120x5T",
             MaterialType = "PEEK 5T",
-            Details = "[시작시간]: 16:00\r\n[종료시간]: 16:40\r\n[소재사이즈]: 150x120x5T\r\n[소재종류]: PEEK 5T\r\n- 무수에탄올 3단계 초음파 정밀 세척 및 클린 에어 건조\r\n- 대전방지(ESD) 진공 팩킹 및 바코드 라벨링 출고 준비",
+            FixingMethod = "진공 흡착 (진공 플레이트)",
+            Details = "[시작시간]: 16:00\r\n[종료시간]: 16:40\r\n[Size]: 150x120x5T\r\n[재질]: PEEK 5T\r\n[고정방식]: 진공 흡착 (진공 플레이트)\r\n- 무수에탄올 3단계 초음파 정밀 세척 및 클린 에어 건조\r\n- 대전방지(ESD) 진공 팩킹 및 바코드 라벨링 출고 준비",
             X = 1980,
             Y = 80
         };
@@ -1918,6 +2007,7 @@ public class WorkflowMainForm : Form
             if (newStatus == NodeStatus.Completed)
             {
                 node.CompletedAt = DateTime.Now;
+                node.EndTime = DateTime.Now.ToString("HH:mm");
 
                 // Trace outgoing edges to find next process steps
                 var outgoing = _canvas.Edges.Where(e => e.FromNodeId == node.Id).ToList();
@@ -1933,7 +2023,10 @@ public class WorkflowMainForm : Form
                             nextNode.Status = NodeStatus.Running;
 
                         if (nextNode.StartedAt == null)
+                        {
                             nextNode.StartedAt = DateTime.Now;
+                            nextNode.StartTime = DateTime.Now.ToString("HH:mm");
+                        }
 
                         nextActivatedNode ??= nextNode;
                     }
