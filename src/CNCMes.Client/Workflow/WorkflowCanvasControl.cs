@@ -40,6 +40,7 @@ public class WorkflowCanvasControl : UserControl
     public event Action? WorkflowChanged;
     public event Action? RequestGenerateDefaultWorkflow;
     public event Action<NodeCategory>? RequestAddQuickNode;
+    public event Action<WorkflowNode>? IssueBadgeClicked;
 
     private WorkflowNode? _selectedNode;
     private WorkflowEdge? _selectedEdge;
@@ -506,7 +507,10 @@ public class WorkflowCanvasControl : UserControl
 
                 using var fontBadge = new Font("맑은 고딕", 7.2f, FontStyle.Bold);
                 var textSize = g.MeasureString(badgeText, fontBadge);
-                var badgeRect = new RectangleF(midX - textSize.Width / 2f - 6f, midY - textSize.Height / 2f - 3f, textSize.Width + 12f, textSize.Height + 6f);
+                // Adjust Y offset when nodes are close horizontally so text never collides with anchors
+                float horizontalDist = Math.Abs(p2.X - p1.X);
+                float yAdjust = horizontalDist < 140f ? -16f : 0f;
+                var badgeRect = new RectangleF(midX - textSize.Width / 2f - 6f, midY - textSize.Height / 2f - 3f + yAdjust, textSize.Width + 12f, textSize.Height + 6f);
 
                 Color badgeBg = isSubworker ? Color.FromArgb(240, 30, 20, 50) : Color.FromArgb(240, 15, 23, 42);
                 Color badgeBorder = isSubworker ? Color.FromArgb(168, 85, 247) : Color.FromArgb(56, 189, 248);
@@ -573,6 +577,22 @@ public class WorkflowCanvasControl : UserControl
         {
             DrawSingleNode(g, node);
         }
+    }
+
+    public RectangleF GetIssueBadgeBounds(WorkflowNode node)
+    {
+        var rect = node.Bounds;
+        if (node.Status == NodeStatus.Issue)
+        {
+            // [🚨 이슈] 붉은색 배지 영역 (48x20)
+            return new RectangleF(rect.Right - 54, rect.Y + 52, 46, 20);
+        }
+        else if (node.HasIssueHistory)
+        {
+            // [⚠️ 조치완료] 호박색/주황색 배지 영역 (68x20)
+            return new RectangleF(rect.Right - 116, rect.Y + 52, 68, 20);
+        }
+        return RectangleF.Empty;
     }
 
     private void DrawSingleNode(Graphics g, WorkflowNode node)
@@ -673,37 +693,72 @@ public class WorkflowCanvasControl : UserControl
             g.DrawString(workerText, fontWorker, brushWorker, rect.X + 8, rect.Y + 54);
         }
 
-        // Status Badge (대기, 진행중, 측정, 완료, 이슈)
-        string statusText = node.Status switch
+        // Status Badge & Issue History Badge
+        if (node.Status == NodeStatus.Issue)
         {
-            NodeStatus.Ready => "대기",
-            NodeStatus.Running => "진행중",
-            NodeStatus.PendingCheck => "측정",
-            NodeStatus.Completed => "완료",
-            NodeStatus.Issue => "이슈",
-            _ => "대기"
-        };
-        Color statusBg = node.Status switch
-        {
-            NodeStatus.Ready => Color.FromArgb(42, 59, 76),
-            NodeStatus.Running => Color.FromArgb(5, 150, 105),
-            NodeStatus.PendingCheck => Color.FromArgb(217, 119, 6),
-            NodeStatus.Completed => Color.FromArgb(2, 132, 199),
-            NodeStatus.Issue => Color.FromArgb(220, 38, 38),
-            _ => Color.FromArgb(42, 59, 76)
-        };
-
-        var statusRect = new RectangleF(rect.Right - 44, rect.Y + 52, 36, 18);
-        using (var sBg = new SolidBrush(statusBg))
-        using (var sPen = new Pen(Color.FromArgb(80, 255, 255, 255), 1f))
-        {
-            DrawRoundedRectangle(g, sBg, sPen, statusRect, 4f);
+            // 노드가 현재 이슈 발생 상태인 경우: [🚨 이슈] 붉은색 고대비 배지
+            var issueRect = GetIssueBadgeBounds(node);
+            using (var sBg = new SolidBrush(Color.FromArgb(220, 38, 38)))
+            using (var sPen = new Pen(Color.FromArgb(254, 202, 202), 1.2f))
+            {
+                DrawRoundedRectangle(g, sBg, sPen, issueRect, 4f);
+            }
+            using (var sText = new SolidBrush(Color.White))
+            using (var fontS = new Font("맑은 고딕", 7.2f, FontStyle.Bold))
+            {
+                var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+                g.DrawString("🚨 이슈", fontS, sText, issueRect, sf);
+            }
         }
-        using (var sText = new SolidBrush(Color.White))
-        using (var fontS = new Font("맑은 고딕", 7.2f, FontStyle.Bold))
+        else
         {
-            var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-            g.DrawString(statusText, fontS, sText, statusRect, sf);
+            // 기본 상태 배지 (대기, 진행중, 측정, 완료)
+            string statusText = node.Status switch
+            {
+                NodeStatus.Ready => "대기",
+                NodeStatus.Running => "진행중",
+                NodeStatus.PendingCheck => "측정",
+                NodeStatus.Completed => "완료",
+                _ => "대기"
+            };
+            Color statusBg = node.Status switch
+            {
+                NodeStatus.Ready => Color.FromArgb(42, 59, 76),
+                NodeStatus.Running => Color.FromArgb(5, 150, 105),
+                NodeStatus.PendingCheck => Color.FromArgb(217, 119, 6),
+                NodeStatus.Completed => Color.FromArgb(2, 132, 199),
+                _ => Color.FromArgb(42, 59, 76)
+            };
+
+            var statusRect = new RectangleF(rect.Right - 44, rect.Y + 52, 36, 18);
+            using (var sBg = new SolidBrush(statusBg))
+            using (var sPen = new Pen(Color.FromArgb(80, 255, 255, 255), 1f))
+            {
+                DrawRoundedRectangle(g, sBg, sPen, statusRect, 4f);
+            }
+            using (var sText = new SolidBrush(Color.White))
+            using (var fontS = new Font("맑은 고딕", 7.2f, FontStyle.Bold))
+            {
+                var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+                g.DrawString(statusText, fontS, sText, statusRect, sf);
+            }
+
+            // 이슈 해결 완료 후 노드 안에 이슈 이력 표시 유지: [⚠️ 조치완료] (클릭 시 이전 이슈 상세 열람)
+            if (node.HasIssueHistory)
+            {
+                var resolvedRect = GetIssueBadgeBounds(node);
+                using (var resBg = new SolidBrush(Color.FromArgb(60, 245, 158, 11)))
+                using (var resPen = new Pen(Palette.CatInsp, 1.2f))
+                {
+                    DrawRoundedRectangle(g, resBg, resPen, resolvedRect, 4f);
+                }
+                using (var resText = new SolidBrush(Palette.CatInsp))
+                using (var fontRes = new Font("맑은 고딕", 7.0f, FontStyle.Bold))
+                {
+                    var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+                    g.DrawString("⚠️ 조치완료", fontRes, resText, resolvedRect, sf);
+                }
+            }
         }
 
         // Input & Output Anchors (Connection Handles)
@@ -902,10 +957,18 @@ public class WorkflowCanvasControl : UserControl
                 }
             }
 
-            // 2. Check if clicking a node body
+            // 2. Check if clicking a node body or Issue Badge
             var hitNode = Nodes.AsEnumerable().Reverse().FirstOrDefault(n => n.Bounds.Contains(worldPt));
             if (hitNode != null)
             {
+                // Check if clicked the Issue or Resolved Issue Badge inside node
+                var issueBadgeRect = GetIssueBadgeBounds(hitNode);
+                if (!issueBadgeRect.IsEmpty && issueBadgeRect.Contains(worldPt))
+                {
+                    SetSelectedNodes(new[] { hitNode });
+                    IssueBadgeClicked?.Invoke(hitNode);
+                    return;
+                }
                 bool isCtrlOrShift = (ModifierKeys & (Keys.Control | Keys.Shift)) != 0;
 
                 if (isCtrlOrShift)
@@ -1058,7 +1121,13 @@ public class WorkflowCanvasControl : UserControl
         }
 
         bool nearPort = Nodes.Any(n => IsPointNear(worldPt, n.OutputAnchor, 10f) || IsPointNear(worldPt, n.InputAnchor, 10f));
-        if (nearPort) Cursor = Cursors.Cross;
+        bool overIssueBadge = Nodes.Any(n => {
+            var b = GetIssueBadgeBounds(n);
+            return !b.IsEmpty && b.Contains(worldPt);
+        });
+
+        if (overIssueBadge) Cursor = Cursors.Hand;
+        else if (nearPort) Cursor = Cursors.Cross;
         else if (Nodes.Count == 0 && _emptyButtonScreenRect.Contains(e.Location)) Cursor = Cursors.Hand;
         else Cursor = Cursors.Default;
     }

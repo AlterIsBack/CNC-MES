@@ -99,6 +99,9 @@ public class NodeDetailPanel : UserControl
     private Button _btnStatusPendingCheck = null!;
     private Button _btnStatusComplete = null!;
     private Button _btnStatusIssue = null!;
+    private Button _btnViewIssueHistory = null!;
+
+    public event Action<WorkflowNode>? IssueDialogRequested;
 
     // Action Buttons
     private Button _btnSaveDetails = null!;
@@ -292,7 +295,27 @@ public class NodeDetailPanel : UserControl
         _btnStatusComplete.Click += (s, e) => TriggerStatusChange(NodeStatus.Completed);
 
         _btnStatusIssue = CreateFlatButton("이슈", Color.FromArgb(220, 38, 38), Color.White);
-        _btnStatusIssue.Click += (s, e) => TriggerStatusChange(NodeStatus.Issue);
+        _btnStatusIssue.Click += (s, e) =>
+        {
+            if (_currentNode != null)
+            {
+                IssueDialogRequested?.Invoke(_currentNode);
+            }
+            else
+            {
+                TriggerStatusChange(NodeStatus.Issue);
+            }
+        };
+
+        _btnViewIssueHistory = CreateFlatButton("⚠️ 이슈 조치 이력 조회 / 수정", Color.FromArgb(60, 245, 158, 11), Palette.Amber);
+        _btnViewIssueHistory.Visible = false;
+        _btnViewIssueHistory.Click += (s, e) =>
+        {
+            if (_currentNode != null)
+            {
+                IssueDialogRequested?.Invoke(_currentNode);
+            }
+        };
 
         row4.Controls.Add(_btnStatusReady, 0, 0);
         row4.Controls.Add(_btnStatusRunning, 1, 0);
@@ -304,6 +327,8 @@ public class NodeDetailPanel : UserControl
         // 5: Details / Memo Box
         var pnlDetails = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) };
         var lblDetPrompt = new Label { Text = "세부 작업 지시 / 가공 조건 / 점검 메모", Font = new Font("맑은 고딕", 7.8f, FontStyle.Bold), ForeColor = Palette.TextSlate400, Dock = DockStyle.Top, Height = 18 };
+        _btnViewIssueHistory.Dock = DockStyle.Top;
+        _btnViewIssueHistory.Height = 24;
         _txtDetails = new TextBox
         {
             Dock = DockStyle.Fill,
@@ -316,6 +341,7 @@ public class NodeDetailPanel : UserControl
         };
         _txtDetails.TextChanged += (s, e) => SaveChangesToNode();
         pnlDetails.Controls.Add(_txtDetails);
+        pnlDetails.Controls.Add(_btnViewIssueHistory);
         pnlDetails.Controls.Add(lblDetPrompt);
         mainLayout.Controls.Add(pnlDetails, 0, 5);
 
@@ -540,11 +566,20 @@ public class NodeDetailPanel : UserControl
                 {
                     _lblSubWorkerTaskStatus.Text = "○ 미발송";
                     _lblSubWorkerTaskStatus.ForeColor = Palette.TextSlate400;
+            if (_btnViewIssueHistory != null) _btnViewIssueHistory.Visible = false;
                 }
 
                 _btnDelete.Text = "🗑 노드 삭제";
                 _btnSaveDetails.Text = "💾 저장";
                 UpdateStatusButtonsHighlight(node.Status);
+
+                _btnViewIssueHistory.Visible = node.HasIssueHistory;
+                if (node.HasIssueHistory)
+                {
+                    _btnViewIssueHistory.Text = node.Status == NodeStatus.Issue
+                        ? "🚨 이슈 작성/원인·조치 수정 (클릭)"
+                        : "⚠️ 이슈 조치 이력 조회/수정 (클릭)";
+                }
             }
             else
             {

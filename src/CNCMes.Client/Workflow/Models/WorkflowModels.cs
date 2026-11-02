@@ -52,6 +52,16 @@ public class WorkflowNode
     public string SubWorkerName { get; set; } = "";
     public string SubWorkerInstruction { get; set; } = "";
     public bool IsSubWorkerTaskSent { get; set; } = false;
+
+    // Issue Tracking & History Fields (발생 내용, 원인 분석, 대응 및 조치)
+    public bool HasIssueHistory { get; set; } = false;
+    public string IssueType { get; set; } = "";              // 불량/이슈 유형
+    public string IssueOccurredDetails { get; set; } = "";   // 발생 내용 상세
+    public string IssueRootCause { get; set; } = "";          // 원인 분석
+    public string IssueActionTaken { get; set; } = "";        // 대응 및 조치 내용
+    public DateTime? IssueReportedAt { get; set; }           // 이슈 발생/보고 일시
+    public DateTime? IssueResolvedAt { get; set; }           // 이슈 조치완료 일시
+    public string IssueResolvedBy { get; set; } = "";        // 조치 작업자
     
     public float X { get; set; }
     public float Y { get; set; }

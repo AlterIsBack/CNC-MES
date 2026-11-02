@@ -7,7 +7,7 @@ namespace CNCMes.Client.Workflow;
 
 public class WorkflowMainForm : Form
 {
-    private static class Palette
+    public static class Palette
     {
         public static readonly Color Bg950 = Color.FromArgb(10, 16, 28);       // #0a101c
         public static readonly Color Bg900 = Color.FromArgb(15, 23, 42);       // #0f172a
@@ -23,6 +23,7 @@ public class WorkflowMainForm : Form
         public static readonly Color TextWhite = Color.FromArgb(248, 250, 252);
         public static readonly Color TextSlate300 = Color.FromArgb(203, 213, 225);
         public static readonly Color TextSlate400 = Color.FromArgb(148, 163, 184);
+        public static readonly Color TextMuted = Color.FromArgb(148, 163, 184);
     }
 
     private readonly ApiClient _api;
@@ -104,7 +105,7 @@ public class WorkflowMainForm : Form
 
     private void InitializeUI()
     {
-        Text = $"CNC-MES 스마트 현장 터미널 v1.4.3 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
+        Text = $"CNC-MES 스마트 현장 터미널 v1.4.4 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
         Size = new Size(1600, 960);
         MinimumSize = new Size(1280, 720);
         StartPosition = FormStartPosition.CenterScreen;
@@ -212,7 +213,7 @@ public class WorkflowMainForm : Form
         pnlBrand.Controls.Add(pnlIcon);
 
         var lblBrand = new Label { Text = "CNC-MES", Location = new Point(44, 8), Font = new Font("맑은 고딕", 12f, FontStyle.Bold), ForeColor = Color.White, AutoSize = true };
-        var lblVer = new Label { Text = "v1.4.3 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
+        var lblVer = new Label { Text = "v1.4.4 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
         var lblStatus = new Label { Text = "● 서버 정상", Location = new Point(245, 11), Font = new Font("맑은 고딕", 8f, FontStyle.Bold), ForeColor = Palette.Green, BackColor = Color.FromArgb(80, 6, 78, 59), AutoSize = true, Padding = new Padding(5, 1, 5, 1) };
         var lblSub = new Label { Text = "WORKFLOW-BASED OPERATOR CONTROL SYSTEM", Location = new Point(45, 30), Font = new Font("Consolas", 7.2f), ForeColor = Palette.TextSlate400, AutoSize = true };
         pnlBrand.Controls.AddRange(new Control[] { lblBrand, lblVer, lblStatus, lblSub });
@@ -374,11 +375,10 @@ public class WorkflowMainForm : Form
             Padding = new Padding(0)
         };
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 185f)); // Card 1: 6 Action Buttons (2x3 grid, clean spacing)
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 210f)); // Card 1: 6 Action Buttons (2x3 grid, clean spacing, no clipping)
         panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));  // Card 2: Orders & Parts List (Full remaining height)
 
         // Card 1: Workflow Menu Buttons (6 Action Buttons per spec)
-        var cardMenu = CreateCard("📋 워크플로우 제어 메뉴");
         var menuGrid = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -431,12 +431,10 @@ public class WorkflowMainForm : Form
         menuGrid.Controls.Add(btnExecuteSelected, 1, 1);
         menuGrid.Controls.Add(btnAutoLayout, 0, 2);
         menuGrid.Controls.Add(btnClearPlan, 1, 2);
-        cardMenu.Controls.Add(menuGrid);
-        menuGrid.SendToBack(); // Critical for WinForms dock ordering!
+        var cardMenu = CreateCard("📋 워크플로우 제어 메뉴", menuGrid);
         panel.Controls.Add(cardMenu, 0, 0);
 
         // Card 2: Work Orders & Parts List
-        var cardOrders = CreateCard("📦 작업지시서 및 대상 부품 목록");
         var pnlOrderBody = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -457,8 +455,7 @@ public class WorkflowMainForm : Form
         _lstParts.SelectedIndexChanged += (s, e) => OnPartSelected();
         pnlOrderBody.Controls.Add(_lstParts, 0, 1);
 
-        cardOrders.Controls.Add(pnlOrderBody);
-        pnlOrderBody.SendToBack(); // Critical for WinForms dock ordering!
+        var cardOrders = CreateCard("📦 작업지시서 및 대상 부품 목록", pnlOrderBody);
         panel.Controls.Add(cardOrders, 0, 1);
 
         return panel;
@@ -760,10 +757,11 @@ public class WorkflowMainForm : Form
             AddQuickNode(cat, title);
         };
         _detailPanel.SubWorkerTaskSendRequested += async (node, subWorker, instruction) => await SendSubWorkerTaskAsync(node, subWorker, instruction);
+        _detailPanel.IssueDialogRequested += (node) => OpenIssueDialog(node);
+        _canvas.IssueBadgeClicked += (node) => OpenIssueDialog(node);
         panel.Controls.Add(_detailPanel, 0, 0);
 
         // 2: Tabbed Communication Card (Notices & Live Chat)
-        var cardComms = CreateCard("📡 현장 알림 및 실시간 소통");
         var commTabs = new TabControl
         {
             Dock = DockStyle.Fill,
@@ -824,8 +822,7 @@ public class WorkflowMainForm : Form
         tabChat.Controls.Add(pnlChatBody);
         commTabs.TabPages.Add(tabChat);
 
-        cardComms.Controls.Add(commTabs);
-        commTabs.SendToBack(); // Critical for WinForms dock ordering!
+        var cardComms = CreateCard("📡 현장 알림 및 실시간 소통", commTabs);
         panel.Controls.Add(cardComms, 0, 1);
 
         return panel;
@@ -1400,6 +1397,60 @@ public class WorkflowMainForm : Form
         }
     }
 
+    private async void OpenIssueDialog(WorkflowNode node)
+    {
+        using var dlg = new IssueDetailDialog(node, _session.DisplayName);
+        if (dlg.ShowDialog(this) == DialogResult.OK)
+        {
+            _canvas.Invalidate();
+            _detailPanel.BindNode(node);
+            UpdateWorkflowStats();
+
+            if (dlg.DataSaved)
+            {
+                try
+                {
+                    await _api.CreateDefectAndCountermeasureAsync(
+                        string.IsNullOrEmpty(node.PartName) ? node.OrderNumber : node.PartName,
+                        string.IsNullOrEmpty(node.MachineId) ? "R01" : node.MachineId,
+                        "공정이슈",
+                        string.IsNullOrEmpty(node.IssueType) ? "공정 이상" : node.IssueType,
+                        node.IssueOccurredDetails,
+                        node.IssueRootCause,
+                        node.IssueActionTaken,
+                        _session.DisplayName
+                    );
+
+                    string serverStatus = node.Status switch
+                    {
+                        NodeStatus.Running => "가동중",
+                        NodeStatus.PendingCheck => "측정대기",
+                        NodeStatus.Completed => "완료",
+                        NodeStatus.Issue => "불량/이슈",
+                        _ => "대기"
+                    };
+
+                    string prompt = node.Status == NodeStatus.Issue
+                        ? $"[이슈발생] {node.Title} - {node.IssueType}"
+                        : (node.HasIssueHistory ? $"[조치완료] {node.Title}" : $"[{node.Status}] {node.Title}");
+
+                    await _api.UpdateMachineStatusAsync(
+                        node.MachineId,
+                        serverStatus,
+                        node.OrderNumber,
+                        node.PartName,
+                        prompt,
+                        _session.DisplayName
+                    );
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[IssueSync] Error: {ex.Message}");
+                }
+            }
+        }
+    }
+
     private void AddQuickNode(NodeCategory cat, string defaultTitle)
     {
         string orderNo = _cboOrders.SelectedIndex >= 0 ? _cachedOrders[_cboOrders.SelectedIndex].GetProperty("orderNumber").GetString() ?? "" : "";
@@ -1859,7 +1910,7 @@ public class WorkflowMainForm : Form
     // =========================================================================
     // UI BUILDER HELPERS
     // =========================================================================
-    private Panel CreateCard(string title)
+    private Panel CreateCard(string title, Control bodyContent)
     {
         var pnl = new Panel
         {
@@ -1874,17 +1925,33 @@ public class WorkflowMainForm : Form
             e.Graphics.DrawRectangle(pen, 0, 0, pnl.Width - 1, pnl.Height - 1);
         };
 
+        var layout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            Margin = new Padding(0),
+            Padding = new Padding(0)
+        };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28f)); // Dedicated Header Row
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));  // Dedicated Content Body Row
+
         var lblHeader = new Label
         {
             Text = title,
-            Font = new Font("맑은 고딕", 8.8f, FontStyle.Bold),
+            Font = new Font("맑은 고딕", 9f, FontStyle.Bold),
             ForeColor = Palette.TextWhite,
-            Dock = DockStyle.Top,
-            Height = 24,
+            Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleLeft,
-            Padding = new Padding(4, 0, 0, 2)
+            Padding = new Padding(4, 0, 0, 0)
         };
-        pnl.Controls.Add(lblHeader);
+        layout.Controls.Add(lblHeader, 0, 0);
+
+        bodyContent.Dock = DockStyle.Fill;
+        layout.Controls.Add(bodyContent, 0, 1);
+
+        pnl.Controls.Add(layout);
         return pnl;
     }
 
