@@ -28,6 +28,17 @@ public class WorkflowCanvasControl : UserControl
 
     public List<WorkflowNode> Nodes { get; } = new();
     public List<WorkflowEdge> Edges { get; } = new();
+    public List<WorkflowTitleBox> TitleBoxes { get; } = new();
+    public bool ShowTimelineGuides { get; set; } = true;
+    public event Action<WorkflowTitleBox>? TitleBoxDoubleClicked;
+
+    private WorkflowTitleBox? _selectedTitleBox;
+    private WorkflowTitleBox? _draggedTitleBox;
+    private PointF _dragStartOffsetTitleBox;
+    private List<WorkflowNode> _nodesInDraggedTitleBox = new();
+    private WorkflowTitleBox? _resizingTitleBox;
+    private PointF _resizeStartMouse;
+    private SizeF _resizeStartSize;
 
     // Workflow Confirmation Status
     public bool IsWorkflowConfirmed { get; set; } = false;
@@ -169,6 +180,8 @@ public class WorkflowCanvasControl : UserControl
     {
         Nodes.Clear();
         Edges.Clear();
+        TitleBoxes.Clear();
+        _selectedTitleBox = null;
         SelectedNodes.Clear();
         _selectedNode = null;
         _selectedEdge = null;
@@ -419,6 +432,106 @@ public class WorkflowCanvasControl : UserControl
     }
 
     // =========================================================================
+
+    public WorkflowTitleBox WrapNodesWithTitleBox(string title = "공정 그룹군", string colorHex = "#0284c7")
+    {
+        var targetNodes = SelectedNodes.Count > 0 ? SelectedNodes.ToList() : Nodes.ToList();
+        var box = new WorkflowTitleBox
+        {
+            Title = title,
+            ColorHex = colorHex
+        };
+        if (targetNodes.Count > 0)
+        {
+            box.AutoFit(targetNodes);
+        }
+        else
+        {
+            float cx = -_panOffset.X / _zoom + (Width / (2f * _zoom)) - 210f;
+            float cy = -_panOffset.Y / _zoom + (Height / (2f * _zoom)) - 110f;
+            box.X = Math.Max(40f, cx);
+            box.Y = Math.Max(40f, cy);
+            box.Width = 420f;
+            box.Height = 220f;
+        }
+
+        TitleBoxes.Add(box);
+        Invalidate();
+        WorkflowChanged?.Invoke();
+        return box;
+    }
+
+    public List<WorkflowNode> DuplicateSelectedNodes()
+    {
+        var sourceNodes = SelectedNodes.Count > 0 ? SelectedNodes.ToList() : (_selectedNode != null ? new List<WorkflowNode> { _selectedNode } : new List<WorkflowNode>());
+        if (sourceNodes.Count == 0) return new List<WorkflowNode>();
+
+        var clonedNodes = new List<WorkflowNode>();
+        var idMap = new Dictionary<string, string>();
+
+        foreach (var src in sourceNodes)
+        {
+            var dup = new WorkflowNode
+            {
+                Id = Guid.NewGuid().ToString("N")[..8],
+                Title = $"{src.Title} (복사본)",
+                Category = src.Category,
+                Status = NodeStatus.Ready,
+                OrderNumber = src.OrderNumber,
+                PartName = src.PartName,
+                MachineId = src.MachineId,
+                Assignee = src.Assignee,
+                Details = src.Details,
+                NextProcess = src.NextProcess,
+                SubWorkerName = src.SubWorkerName,
+                SubWorkerInstruction = src.SubWorkerInstruction,
+                StartTime = src.StartTime,
+                EndTime = src.EndTime,
+                MaterialSize = src.MaterialSize,
+                MaterialType = src.MaterialType,
+                FixingMethod = src.FixingMethod,
+                X = src.X + 45f,
+                Y = src.Y + 45f,
+                Width = src.Width,
+                Height = src.Height
+            };
+            idMap[src.Id] = dup.Id;
+            Nodes.Add(dup);
+            clonedNodes.Add(dup);
+        }
+
+        // Duplicate internal edges between source nodes if any
+        var internalEdges = Edges.Where(e => idMap.ContainsKey(e.FromNodeId) && idMap.ContainsKey(e.ToNodeId)).ToList();
+        foreach (var edge in internalEdges)
+        {
+            Edges.Add(new WorkflowEdge
+            {
+                FromNodeId = idMap[edge.FromNodeId],
+                ToNodeId = idMap[edge.ToNodeId],
+                Type = edge.Type,
+                Label = edge.Label
+            });
+        }
+
+        // Immediately select all newly created duplicated nodes!
+        SelectedNodes.Clear();
+        foreach (var n in Nodes) n.IsSelected = false;
+
+        foreach (var dup in clonedNodes)
+        {
+            dup.IsSelected = true;
+            SelectedNodes.Add(dup);
+        }
+        _selectedNode = clonedNodes.LastOrDefault();
+
+        Invalidate();
+        NodeSelected?.Invoke(_selectedNode);
+        SelectionChanged?.Invoke(SelectedNodes);
+        WorkflowChanged?.Invoke();
+
+        return clonedNodes;
+    }
+
     // PAINTING / RENDERING
     // =========================================================================
     protected override void OnPaint(PaintEventArgs e)
@@ -434,6 +547,8 @@ public class WorkflowCanvasControl : UserControl
         g.ScaleTransform(_zoom, _zoom);
 
         DrawGrid(g);
+        if (ShowTimelineGuides) DrawTimelineGuides(g);
+        DrawTitleBoxes(g);
         DrawEdges(g);
         DrawConnectingLine(g);
         DrawNodes(g);
@@ -489,6 +604,144 @@ public class WorkflowCanvasControl : UserControl
         using var fontBtn = new Font("맑은 고딕", 9.5f, FontStyle.Bold);
         var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
         g.DrawString("⚡ 기본 워크플로우 생성", fontBtn, Brushes.White, _emptyButtonScreenRect, sf);
+    }
+
+
+    private void DrawTimelineGuides(Graphics g)
+    {
+        if (Nodes.Count == 0 && TitleBoxes.Count == 0) return;
+
+        static double ParseTime(string timeStr, double defaultVal)
+        {
+            if (string.IsNullOrWhiteSpace(timeStr)) return defaultVal;
+            var parts = timeStr.Trim().Split(':', ' ', '-');
+            if (parts.Length >= 2 && double.TryParse(parts[0], out double h) && double.TryParse(parts[1], out double m))
+                return h + (m / 60.0);
+            if (double.TryParse(timeStr, out double onlyH)) return onlyH;
+            return defaultVal;
+        }
+
+        double minTime = Nodes.Count > 0 ? Nodes.Min(n => ParseTime(n.StartTime, 8.5)) : 8.0;
+        double baseTime = Math.Floor(minTime);
+        float startX = 60f;
+        float pixelsPerHour = 240f;
+
+        float worldTop = -_panOffset.Y / _zoom;
+        float worldBottom = worldTop + Height / _zoom;
+        float worldLeft = -_panOffset.X / _zoom;
+        float worldRight = worldLeft + Width / _zoom;
+
+        float rulerY = Math.Max(worldTop + 4f, 15f);
+
+        using var fontHour = new Font("Consolas", 8.2f, FontStyle.Bold);
+        using var fontHalf = new Font("Consolas", 7.2f);
+        using var linePenHour = new Pen(Color.FromArgb(45, 56, 189, 248), 1f) { DashStyle = DashStyle.Dash };
+        using var linePenHalf = new Pen(Color.FromArgb(18, 56, 189, 248), 1f) { DashStyle = DashStyle.Dot };
+        using var rulerBg = new SolidBrush(Color.FromArgb(235, 15, 23, 42));
+        using var rulerBorder = new Pen(Color.FromArgb(80, 56, 189, 248), 1f);
+        using var textSky = new SolidBrush(Color.FromArgb(56, 189, 248));
+        using var textSlate = new SolidBrush(Color.FromArgb(148, 163, 184));
+
+        for (int h = 6; h <= 22; h++)
+        {
+            float hourX = startX + (float)((h - baseTime) * pixelsPerHour);
+            float halfX = hourX + (0.5f * pixelsPerHour);
+
+            // Hour Line & Top Badge
+            if (hourX >= worldLeft - 60 && hourX <= worldRight + 60)
+            {
+                g.DrawLine(linePenHour, hourX, worldTop, hourX, worldBottom);
+
+                var badgeRect = new RectangleF(hourX - 30f, rulerY, 60f, 20f);
+                DrawRoundedRectangle(g, rulerBg, rulerBorder, badgeRect, 4f);
+                var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+                g.DrawString($"{h:D2}:00", fontHour, textSky, badgeRect, sf);
+            }
+
+            // Half-hour Line
+            if (halfX >= worldLeft - 60 && halfX <= worldRight + 60)
+            {
+                g.DrawLine(linePenHalf, halfX, worldTop, halfX, worldBottom);
+
+                var halfBadgeRect = new RectangleF(halfX - 18f, rulerY + 3f, 36f, 15f);
+                var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+                g.DrawString($":30", fontHalf, textSlate, halfBadgeRect, sf);
+            }
+        }
+    }
+
+    private void DrawTitleBoxes(Graphics g)
+    {
+        if (TitleBoxes.Count == 0) return;
+
+        using var fontTitle = new Font("맑은 고딕", 9.5f, FontStyle.Bold);
+        using var fontSub = new Font("맑은 고딕", 8f);
+        using var fontBtn = new Font("맑은 고딕", 7.5f, FontStyle.Bold);
+
+        foreach (var box in TitleBoxes)
+        {
+            Color accentColor;
+            try { accentColor = ColorTranslator.FromHtml(box.ColorHex); }
+            catch { accentColor = Palette.AccentSky; }
+
+            // 1. Box Body (Semi-transparent background)
+            var bodyRect = box.Bounds;
+            using (var bBg = new SolidBrush(Color.FromArgb(20, accentColor)))
+            using (var bPen = new Pen(box.IsSelected ? Color.White : Color.FromArgb(160, accentColor), box.IsSelected ? 2.2f : 1.4f))
+            {
+                if (!box.IsSelected) bPen.DashStyle = DashStyle.Dash;
+                DrawRoundedRectangle(g, bBg, bPen, bodyRect, 8f);
+            }
+
+            // 2. Header Bar
+            var headerRect = box.HeaderBounds;
+            using (var hBg = new SolidBrush(Color.FromArgb(220, 15, 23, 42)))
+            using (var hPen = new Pen(Color.FromArgb(120, accentColor), 1f))
+            {
+                DrawRoundedRectangle(g, hBg, hPen, headerRect, 6f);
+            }
+
+            // Top accent indicator strip
+            using (var stripBrush = new SolidBrush(accentColor))
+            {
+                g.FillRectangle(stripBrush, headerRect.X + 6, headerRect.Y + 2, headerRect.Width - 12, 3);
+            }
+
+            // Title and member count
+            int memberCount = Nodes.Count(n => box.Bounds.Contains(n.Bounds));
+            string titleText = $"📦 {box.Title}";
+            using (var tBrush = new SolidBrush(Palette.TextWhite))
+            {
+                g.DrawString(titleText, fontTitle, tBrush, headerRect.X + 10, headerRect.Y + 7);
+            }
+
+            var titleSize = g.MeasureString(titleText, fontTitle);
+            string countText = $"({memberCount}개 공정 포함)";
+            using (var cBrush = new SolidBrush(Color.FromArgb(148, 163, 184)))
+            {
+                g.DrawString(countText, fontSub, cBrush, headerRect.X + 16 + titleSize.Width, headerRect.Y + 9);
+            }
+
+            // Auto-fit button in header
+            var btnRect = box.AutoFitButtonBounds;
+            using (var btnBg = new SolidBrush(Color.FromArgb(40, accentColor)))
+            using (var btnPen = new Pen(Color.FromArgb(120, accentColor), 1f))
+            using (var btnText = new SolidBrush(Color.FromArgb(203, 213, 225)))
+            {
+                DrawRoundedRectangle(g, btnBg, btnPen, btnRect, 4f);
+                var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+                g.DrawString("⟲ 자동맞춤", fontBtn, btnText, btnRect, sf);
+            }
+
+            // 3. Bottom-Right Resize Handle
+            var gripRect = box.ResizeHandleBounds;
+            using (var gripPen = new Pen(Color.FromArgb(180, accentColor), 1.5f))
+            {
+                g.DrawLine(gripPen, gripRect.Right - 4, gripRect.Bottom - 12, gripRect.Right - 12, gripRect.Bottom - 4);
+                g.DrawLine(gripPen, gripRect.Right - 4, gripRect.Bottom - 8, gripRect.Right - 8, gripRect.Bottom - 4);
+                g.DrawLine(gripPen, gripRect.Right - 4, gripRect.Bottom - 4, gripRect.Right - 4, gripRect.Bottom - 4);
+            }
+        }
     }
 
     private void DrawGrid(Graphics g)
@@ -1007,6 +1260,13 @@ public class WorkflowCanvasControl : UserControl
             return;
         }
 
+        if (e.Control && (e.KeyCode == Keys.D || e.KeyCode == Keys.C))
+        {
+            DuplicateSelectedNodes();
+            e.Handled = true;
+            return;
+        }
+
         if (e.KeyCode == Keys.Escape)
         {
             ClearSelection();
@@ -1024,6 +1284,14 @@ public class WorkflowCanvasControl : UserControl
             else if (SelectedNodes.Count > 0)
             {
                 RemoveNodes(SelectedNodes);
+                e.Handled = true;
+            }
+            else if (_selectedTitleBox != null)
+            {
+                TitleBoxes.Remove(_selectedTitleBox);
+                _selectedTitleBox = null;
+                Invalidate();
+                WorkflowChanged?.Invoke();
                 e.Handled = true;
             }
         }
@@ -1137,6 +1405,46 @@ public class WorkflowCanvasControl : UserControl
                 return;
             }
 
+            // 3.5 Check TitleBoxes (Auto-fit button, Resize handle, or Body drag)
+            foreach (var box in TitleBoxes.AsEnumerable().Reverse())
+            {
+                if (box.AutoFitButtonBounds.Contains(worldPt))
+                {
+                    var memberNodes = Nodes.Where(n => box.Bounds.Contains(n.Bounds)).ToList();
+                    if (memberNodes.Count > 0)
+                    {
+                        box.AutoFit(memberNodes);
+                        Invalidate();
+                        WorkflowChanged?.Invoke();
+                    }
+                    return;
+                }
+
+                if (box.ResizeHandleBounds.Contains(worldPt))
+                {
+                    _resizingTitleBox = box;
+                    _resizeStartMouse = worldPt;
+                    _resizeStartSize = new SizeF(box.Width, box.Height);
+                    Cursor = Cursors.SizeNWSE;
+                    return;
+                }
+
+                if (box.HeaderBounds.Contains(worldPt) || (box.Bounds.Contains(worldPt) && !Nodes.Any(n => n.Bounds.Contains(worldPt))))
+                {
+                    _draggedTitleBox = box;
+                    _dragStartOffsetTitleBox = new PointF(worldPt.X - box.X, worldPt.Y - box.Y);
+                    _nodesInDraggedTitleBox = Nodes.Where(n => box.Bounds.Contains(n.Bounds)).ToList();
+
+                    foreach (var b in TitleBoxes) b.IsSelected = (b == box);
+                    _selectedTitleBox = box;
+                    Invalidate();
+                    return;
+                }
+            }
+
+            foreach (var b in TitleBoxes) b.IsSelected = false;
+            _selectedTitleBox = null;
+
             // 4. Clicked empty background: Start Box / Rubberband Drag Selection!
             bool keepOld = (ModifierKeys & (Keys.Control | Keys.Shift)) != 0;
             if (!keepOld)
@@ -1173,6 +1481,38 @@ public class WorkflowCanvasControl : UserControl
         if (_connectingFromNode != null)
         {
             _currentConnectingPoint = worldPt;
+            Invalidate();
+            return;
+        }
+
+        // Resizing TitleBox
+        if (_resizingTitleBox != null)
+        {
+            float newW = Math.Max(200f, _resizeStartSize.Width + (worldPt.X - _resizeStartMouse.X));
+            float newH = Math.Max(120f, _resizeStartSize.Height + (worldPt.Y - _resizeStartMouse.Y));
+            _resizingTitleBox.Width = newW;
+            _resizingTitleBox.Height = newH;
+            Invalidate();
+            return;
+        }
+
+        // Dragging TitleBox and enclosed nodes
+        if (_draggedTitleBox != null)
+        {
+            float newX = worldPt.X - _dragStartOffsetTitleBox.X;
+            float newY = worldPt.Y - _dragStartOffsetTitleBox.Y;
+            float dx = newX - _draggedTitleBox.X;
+            float dy = newY - _draggedTitleBox.Y;
+
+            _draggedTitleBox.X = newX;
+            _draggedTitleBox.Y = newY;
+
+            foreach (var n in _nodesInDraggedTitleBox)
+            {
+                n.X += dx;
+                n.Y += dy;
+            }
+
             Invalidate();
             return;
         }
@@ -1243,7 +1583,13 @@ public class WorkflowCanvasControl : UserControl
             return !b.IsEmpty && b.Contains(worldPt);
         });
 
-        if (overIssueBadge) Cursor = Cursors.Hand;
+        bool overResize = TitleBoxes.Any(b => b.ResizeHandleBounds.Contains(worldPt));
+        bool overAutoFit = TitleBoxes.Any(b => b.AutoFitButtonBounds.Contains(worldPt));
+        bool overHeader = TitleBoxes.Any(b => b.HeaderBounds.Contains(worldPt));
+
+        if (overResize) Cursor = Cursors.SizeNWSE;
+        else if (overAutoFit || overIssueBadge) Cursor = Cursors.Hand;
+        else if (overHeader) Cursor = Cursors.SizeAll;
         else if (nearPort) Cursor = Cursors.Cross;
         else if (Nodes.Count == 0 && _emptyButtonScreenRect.Contains(e.Location)) Cursor = Cursors.Hand;
         else Cursor = Cursors.Default;
@@ -1297,6 +1643,15 @@ public class WorkflowCanvasControl : UserControl
             {
                 _draggedNodes.Clear();
                 _dragStartOffsets.Clear();
+                WorkflowChanged?.Invoke();
+            }
+
+            if (_resizingTitleBox != null || _draggedTitleBox != null)
+            {
+                _resizingTitleBox = null;
+                _draggedTitleBox = null;
+                _nodesInDraggedTitleBox.Clear();
+                Cursor = Cursors.Default;
                 WorkflowChanged?.Invoke();
             }
         }
@@ -1510,9 +1865,18 @@ public class WorkflowCanvasControl : UserControl
     protected override void OnMouseDoubleClick(MouseEventArgs e)
     {
         base.OnMouseDoubleClick(e);
-        if (_selectedNode != null && _selectedNode.Bounds.Contains(ScreenToWorld(e.Location)))
+        var worldPt = ScreenToWorld(e.Location);
+        if (_selectedNode != null && _selectedNode.Bounds.Contains(worldPt))
         {
             NodeDoubleClicked?.Invoke(_selectedNode);
+            return;
+        }
+
+        var hitBox = TitleBoxes.AsEnumerable().Reverse().FirstOrDefault(b => b.HeaderBounds.Contains(worldPt) || b.Bounds.Contains(worldPt));
+        if (hitBox != null)
+        {
+            TitleBoxDoubleClicked?.Invoke(hitBox);
+            return;
         }
     }
 

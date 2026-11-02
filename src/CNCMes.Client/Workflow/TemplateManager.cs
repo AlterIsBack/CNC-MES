@@ -17,6 +17,7 @@ public class WorkflowTemplateItem
     public bool IsBuiltIn { get; set; } = false;
     public List<WorkflowNode> Nodes { get; set; } = new();
     public List<WorkflowEdge> Edges { get; set; } = new();
+    public List<WorkflowTitleBox> TitleBoxes { get; set; } = new();
 }
 
 public static class TemplateManager
@@ -70,7 +71,7 @@ public static class TemplateManager
         return list;
     }
 
-    public static void SaveTemplate(string name, string description, string material, string fixingMethod, List<WorkflowNode> nodes, List<WorkflowEdge> edges)
+    public static void SaveTemplate(string name, string description, string material, string fixingMethod, List<WorkflowNode> nodes, List<WorkflowEdge> edges, List<WorkflowTitleBox>? titleBoxes = null)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("템플릿 이름을 입력해주세요.");
@@ -89,6 +90,11 @@ public static class TemplateManager
         var (clonedNodes, clonedEdges) = CloneWorkflow(nodes, edges);
         item.Nodes = clonedNodes;
         item.Edges = clonedEdges;
+        if (titleBoxes != null)
+        {
+            foreach (var b in titleBoxes)
+                item.TitleBoxes.Add(new WorkflowTitleBox { Title = b.Title, ColorHex = b.ColorHex, X = b.X, Y = b.Y, Width = b.Width, Height = b.Height });
+        }
 
         string sanitized = string.Concat(name.Split(Path.GetInvalidFileNameChars())).Trim();
         if (string.IsNullOrEmpty(sanitized)) sanitized = "template_" + DateTime.Now.ToString("yyyyMMdd_HHmmss");
@@ -118,7 +124,7 @@ public static class TemplateManager
     /// <summary>
     /// 템플릿을 새로운 인스턴스로 복제하여 고유 노드 ID를 재할당하고 엣지 연결을 완벽 복원
     /// </summary>
-    public static (List<WorkflowNode> Nodes, List<WorkflowEdge> Edges) InstantiateTemplate(WorkflowTemplateItem template, string orderNumber = "WO-2026-001", string partName = "")
+    public static (List<WorkflowNode> Nodes, List<WorkflowEdge> Edges, List<WorkflowTitleBox> TitleBoxes) InstantiateTemplate(WorkflowTemplateItem template, string orderNumber = "WO-2026-001", string partName = "")
     {
         string pName = string.IsNullOrWhiteSpace(partName) ? template.Name : partName;
         var (nodes, edges) = CloneWorkflow(template.Nodes, template.Edges);
@@ -132,7 +138,24 @@ public static class TemplateManager
             node.CompletedAt = null;
         }
 
-        return (nodes, edges);
+        var boxes = new List<WorkflowTitleBox>();
+        if (template.TitleBoxes != null)
+        {
+            foreach (var b in template.TitleBoxes)
+            {
+                boxes.Add(new WorkflowTitleBox
+                {
+                    Title = b.Title,
+                    ColorHex = b.ColorHex,
+                    X = b.X,
+                    Y = b.Y,
+                    Width = b.Width,
+                    Height = b.Height
+                });
+            }
+        }
+
+        return (nodes, edges, boxes);
     }
 
     private static (List<WorkflowNode> Nodes, List<WorkflowEdge> Edges) CloneWorkflow(List<WorkflowNode> nodes, List<WorkflowEdge> edges)

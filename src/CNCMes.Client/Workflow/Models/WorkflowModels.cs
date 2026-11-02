@@ -101,6 +101,47 @@ public class WorkflowEdge
     public bool IsSelected { get; set; }
 }
 
+public class WorkflowTitleBox
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
+    public string Title { get; set; } = "1차 가공 공정군";
+    public string ColorHex { get; set; } = "#0284c7"; // Default sky blue
+    public float X { get; set; } = 40f;
+    public float Y { get; set; } = 40f;
+    public float Width { get; set; } = 420f;
+    public float Height { get; set; } = 200f;
+
+    [JsonIgnore]
+    public bool IsSelected { get; set; }
+
+    [JsonIgnore]
+    public RectangleF Bounds => new(X, Y, Width, Height);
+
+    [JsonIgnore]
+    public RectangleF HeaderBounds => new(X, Y, Width, 32f);
+
+    [JsonIgnore]
+    public RectangleF ResizeHandleBounds => new(X + Width - 18f, Y + Height - 18f, 18f, 18f);
+
+    [JsonIgnore]
+    public RectangleF AutoFitButtonBounds => new(X + Width - 88f, Y + 5f, 68f, 22f);
+
+    public void AutoFit(IEnumerable<WorkflowNode> nodes)
+    {
+        var list = nodes.ToList();
+        if (list.Count == 0) return;
+        float minX = list.Min(n => n.X);
+        float minY = list.Min(n => n.Y);
+        float maxX = list.Max(n => n.X + n.Width);
+        float maxY = list.Max(n => n.Y + n.Height);
+
+        X = minX - 25f;
+        Y = minY - 45f;
+        Width = Math.Max(260f, (maxX - minX) + 50f);
+        Height = Math.Max(140f, (maxY - minY) + 70f);
+    }
+}
+
 public class WorkflowData
 {
     public int OrderId { get; set; }
@@ -109,6 +150,7 @@ public class WorkflowData
     public string PartName { get; set; } = "";
     public List<WorkflowNode> Nodes { get; set; } = new();
     public List<WorkflowEdge> Edges { get; set; } = new();
+    public List<WorkflowTitleBox> TitleBoxes { get; set; } = new();
     
     public DateTime LastSavedAt { get; set; } = DateTime.Now;
     public bool IsConfirmed { get; set; } = false;

@@ -1,4 +1,7 @@
+using System;
+using System.Drawing;
 using System.Drawing.Imaging;
+using System.Windows.Forms;
 using CNCMes.Client.Workflow;
 using CNCMes.Client.Workflow.Models;
 
@@ -42,18 +45,7 @@ public static class TestScreenCapture
             System.Threading.Thread.Sleep(50);
         }
 
-        // Print debug
-        var panelField = typeof(WorkflowMainForm).GetField("_detailPanel", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        if (panelField?.GetValue(form) is NodeDetailPanel dp)
-        {
-            Console.WriteLine($"DEBUG_TAGS: Bounds={dp._pnlTagPresets.Bounds}, Visible={dp._pnlTagPresets.Visible}, Controls={dp._pnlTagPresets.Controls.Count}, Parent={dp._pnlTagPresets.Parent?.Name ?? dp._pnlTagPresets.Parent?.GetType().Name}");
-            foreach (Control c in dp._pnlTagPresets.Controls)
-            {
-                Console.WriteLine($"  BTN: text='{c.Text}', bounds={c.Bounds}, visible={c.Visible}");
-            }
-        }
-
-        // Test: Select first node and test running/completed auto-times
+        // Test: Title Box addition & Timeline guides
         var canvasField = typeof(WorkflowMainForm).GetField("_canvas", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
         var detailField = typeof(WorkflowMainForm).GetField("_detailPanel", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
         if (canvasField?.GetValue(form) is WorkflowCanvasControl canvas && canvas.Nodes.Count > 0 && detailField?.GetValue(form) is NodeDetailPanel detail)
@@ -62,38 +54,60 @@ public static class TestScreenCapture
             canvas.SelectedNode = n1;
             detail.BindNode(n1);
 
-            // 1. Simulate clicking 진행중
-            var btnRun = typeof(NodeDetailPanel).GetField("_btnStatusRunning", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(detail) as Button;
-            btnRun?.PerformClick();
-            Console.WriteLine($"RUN_CLICKED: Node StartTime='{n1.StartTime}', Status={n1.Status}");
-
-            // 2. Simulate clicking 완료
-            var btnComp = typeof(NodeDetailPanel).GetField("_btnStatusComplete", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(detail) as Button;
-            btnComp?.PerformClick();
-            Console.WriteLine($"COMPLETE_CLICKED: Node EndTime='{n1.EndTime}', Status={n1.Status}");
-
-            // 3. Test NodeEditDialog rendering
-            using var dlg = new NodeEditDialog(n1, "김철수 (작업자)");
-            dlg.StartPosition = FormStartPosition.Manual;
-            dlg.Location = new Point(100, 100);
-            dlg.Show();
-            for (int k = 0; k < 10; k++) { Application.DoEvents(); System.Threading.Thread.Sleep(30); }
-            using (var dlgBmp = new Bitmap(dlg.Width, dlg.Height))
+            // 1. Add Title Boxes
+            var box1 = new WorkflowTitleBox
             {
-                dlg.DrawToBitmap(dlgBmp, new Rectangle(0, 0, dlg.Width, dlg.Height));
-                string dlgPath = @"C:\Users\USER\.gemini\antigravity\brain\c11cfd6b-e9b4-430b-acd3-767a137025e6\node_edit_dialog_v148.png";
+                Title = "1차 가공 공정군 (소재 및 황삭)",
+                ColorHex = "#0284c7",
+                X = 60,
+                Y = 60,
+                Width = 560,
+                Height = 320
+            };
+            var box2 = new WorkflowTitleBox
+            {
+                Title = "2차 정밀 가공 및 검사 공정군",
+                ColorHex = "#10b981",
+                X = 660,
+                Y = 60,
+                Width = 560,
+                Height = 320
+            };
+            canvas.TitleBoxes.Add(box1);
+            canvas.TitleBoxes.Add(box2);
+
+            // 2. Turn on timeline guides
+            canvas.ShowTimelineGuides = true;
+
+            // 3. Test node duplicate selection
+            canvas.SelectedNodes.Clear();
+            canvas.SelectedNodes.Add(n1);
+            int prevCount = canvas.Nodes.Count;
+            canvas.DuplicateSelectedNodes();
+            Console.WriteLine($"DUPLICATE_TEST: Prev={prevCount}, After={canvas.Nodes.Count}, SelectedCount={canvas.SelectedNodes.Count}");
+
+            // 4. Test SubWorkerDispatchDialog rendering
+            using var subDlg = new SubWorkerDispatchDialog("이서브", "R01", "WO-2026-001", "프로브카드 인터포저");
+            subDlg.StartPosition = FormStartPosition.Manual;
+            subDlg.Location = new Point(120, 120);
+            subDlg.Show();
+            for (int k = 0; k < 10; k++) { Application.DoEvents(); System.Threading.Thread.Sleep(30); }
+            using (var dlgBmp = new Bitmap(subDlg.Width, subDlg.Height))
+            {
+                subDlg.DrawToBitmap(dlgBmp, new Rectangle(0, 0, subDlg.Width, subDlg.Height));
+                string dlgPath = @"C:\Users\USER\.gemini\antigravity\brain\c11cfd6b-e9b4-430b-acd3-767a137025e6\subworker_dispatch_dialog_v149.png";
                 dlgBmp.Save(dlgPath, ImageFormat.Png);
-                Console.WriteLine("SAVED_DIALOG_SCREEN: " + dlgPath);
+                Console.WriteLine("SAVED_SUBWORKER_DIALOG_SCREEN: " + dlgPath);
             }
-            dlg.Close();
+            subDlg.Close();
         }
 
         using (var bmp = new Bitmap(1920, 1080))
         {
             form.DrawToBitmap(bmp, new Rectangle(0, 0, 1920, 1080));
-            string path = @"C:\Users\USER\.gemini\antigravity\brain\c11cfd6b-e9b4-430b-acd3-767a137025e6\workflow_v148_screen.png";
+            string path = @"C:\Users\USER\.gemini\antigravity\brain\c11cfd6b-e9b4-430b-acd3-767a137025e6\workflow_v149_screen.png";
             bmp.Save(path, ImageFormat.Png);
-            Console.WriteLine("SAVED_V148_SCREEN: " + path);
+            Console.WriteLine("SAVED_V149_SCREEN: " + path);
         }
         form.Close();
     }

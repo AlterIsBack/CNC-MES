@@ -33,6 +33,8 @@ public class WorkflowMainForm : Form
     private Label _lblWorkflowStats = null!;
     private Label _lblActiveMachineSummary = null!;
     private Label _lblLiveClock = null!;
+    private Button _btnToggleTimelineGuides = null!;
+    private FlowLayoutPanel _pnlSubWorkerCards = null!;
     private Button _btnRefreshAll = null!;
     private Button _btnOpenNoticesTop = null!;
     private Label _lblAutoSaveBadge = null!;
@@ -107,7 +109,7 @@ public class WorkflowMainForm : Form
 
     private void InitializeUI()
     {
-        Text = $"CNC-MES 스마트 현장 터미널 v1.4.8 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
+        Text = $"CNC-MES 스마트 현장 터미널 v1.4.9 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
         Size = new Size(1600, 960);
         MinimumSize = new Size(1280, 720);
         StartPosition = FormStartPosition.CenterScreen;
@@ -216,7 +218,7 @@ public class WorkflowMainForm : Form
         pnlBrand.Controls.Add(pnlIcon);
 
         var lblBrand = new Label { Text = "CNC-MES", Location = new Point(44, 8), Font = new Font("맑은 고딕", 12f, FontStyle.Bold), ForeColor = Color.White, AutoSize = true };
-        var lblVer = new Label { Text = "v1.4.8 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
+        var lblVer = new Label { Text = "v1.4.9 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
         var lblStatus = new Label { Text = "● 서버 정상", Location = new Point(245, 11), Font = new Font("맑은 고딕", 8f, FontStyle.Bold), ForeColor = Palette.Green, BackColor = Color.FromArgb(80, 6, 78, 59), AutoSize = true, Padding = new Padding(5, 1, 5, 1) };
         var lblSub = new Label { Text = "WORKFLOW-BASED OPERATOR CONTROL SYSTEM", Location = new Point(45, 30), Font = new Font("Consolas", 7.2f), ForeColor = Palette.TextSlate400, AutoSize = true };
         pnlBrand.Controls.AddRange(new Control[] { lblBrand, lblVer, lblStatus, lblSub });
@@ -567,6 +569,14 @@ public class WorkflowMainForm : Form
         var btnSelectAll = CreateFlatButton("🔲 전체선택", Palette.Bg800, Palette.TextSlate300, 80, 28);
         btnSelectAll.Click += (s, e) => _canvas.SelectAllNodes();
 
+        var btnAddTitleGroup = CreateFlatButton("📦 +타이틀 그룹", Palette.Bg800, Color.FromArgb(56, 189, 248), 115, 28);
+        btnAddTitleGroup.Font = new Font("맑은 고딕", 8f, FontStyle.Bold);
+        btnAddTitleGroup.Click += (s, e) => AddTitleGroupBox();
+
+        _btnToggleTimelineGuides = CreateFlatButton("⏱ 타임라인선: 켜짐", Palette.Bg800, Color.FromArgb(14, 165, 233), 125, 28);
+        _btnToggleTimelineGuides.Font = new Font("맑은 고딕", 8f, FontStyle.Bold);
+        _btnToggleTimelineGuides.Click += (s, e) => ToggleTimelineGuides();
+
         var btnTimelineTop = CreateFlatButton("⏱ 타임라인 정렬", Palette.Bg800, Color.FromArgb(14, 165, 233), 110, 28);
         btnTimelineTop.Click += (s, e) => _canvas.ArrangeByTimeline();
 
@@ -577,7 +587,7 @@ public class WorkflowMainForm : Form
         canvasToolbar.Controls.AddRange(new Control[]
         {
             btnAddPrep, btnAddMach, btnAddInsp, btnAddCollab, btnAddPost, btnAddIssue,
-            divTool, btnTimelineTop, btnZoomReset, btnSelectAll, _btnToggleBottom
+            divTool, btnAddTitleGroup, _btnToggleTimelineGuides, btnTimelineTop, btnZoomReset, btnSelectAll, _btnToggleBottom
         });
 
         // Canvas Control
@@ -591,6 +601,10 @@ public class WorkflowMainForm : Form
         _canvas.NodeDoubleClicked += (node) =>
         {
             OpenNodeEditDialog(node);
+        };
+        _canvas.TitleBoxDoubleClicked += (box) =>
+        {
+            PromptEditTitleBox(box);
         };
         _canvas.WorkflowChanged += () =>
         {
@@ -696,16 +710,60 @@ public class WorkflowMainForm : Form
         tabDefects.Controls.Add(_gridDefects);
         _bottomTabs.TabPages.Add(tabDefects);
 
-        // Tab 3: Sub-worker Dispatch History
-        var tabSub = new TabPage("👥 서브인원 작업 지시 및 보고") { BackColor = Palette.Bg900 };
+        // Tab 3: Sub-worker Dispatch History & Real-Time Collaboration Dashboard
+        var tabSub = new TabPage("👥 서브인원 위치·상태 실시간 공유 대시보드") { BackColor = Palette.Bg900 };
+        var pnlSubDashboard = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            Margin = new Padding(0),
+            Padding = new Padding(0)
+        };
+        pnlSubDashboard.RowStyles.Add(new RowStyle(SizeType.Absolute, 36f)); // Live Status Cards Bar + Action Button
+        pnlSubDashboard.RowStyles.Add(new RowStyle(SizeType.Percent, 100f)); // Grid
+
+        var pnlSubTop = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Color.FromArgb(15, 23, 42),
+            Padding = new Padding(6, 3, 6, 3)
+        };
+
+        var btnOpenDispatch = CreateFlatButton("⚡ 서브인원 실시간 지시 / 위치 이동 지정", Palette.Purple, Color.White, 230, 28);
+        btnOpenDispatch.Dock = DockStyle.Right;
+        btnOpenDispatch.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
+        btnOpenDispatch.Click += (s, e) => OpenSubWorkerDispatchModal();
+
+        _pnlSubWorkerCards = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            AutoScroll = true,
+            Margin = new Padding(0),
+            Padding = new Padding(0)
+        };
+
+        pnlSubTop.Controls.Add(_pnlSubWorkerCards);
+        pnlSubTop.Controls.Add(btnOpenDispatch);
+
+        pnlSubDashboard.Controls.Add(pnlSubTop, 0, 0);
+
         _gridSubTasks = CreateStyledGrid();
         _gridSubTasks.Columns.Add("colSubTime", "지시시각");
         _gridSubTasks.Columns.Add("colSubWorker", "서브인원");
-        _gridSubTasks.Columns.Add("colSubTask", "지시내용");
+        _gridSubTasks.Columns.Add("colSubLocation", "현재 위치(설비/구역)");
+        _gridSubTasks.Columns.Add("colSubStatus", "진행상태");
+        _gridSubTasks.Columns.Add("colSubTask", "작업지시 내용");
         _gridSubTasks.Columns.Add("colSubPart", "대상작지/부품");
-        _gridSubTasks.Columns.Add("colSubStatus", "진행상황");
+        _gridSubTasks.Columns.Add("colSubLeader", "지시 작업자");
+        _gridSubTasks.Columns.Add("colSubReport", "최근 보고결과");
         _gridSubTasks.Columns["colSubTask"]!.FillWeight = 220;
-        tabSub.Controls.Add(_gridSubTasks);
+        _gridSubTasks.Columns["colSubReport"]!.FillWeight = 160;
+
+        pnlSubDashboard.Controls.Add(_gridSubTasks, 0, 1);
+        tabSub.Controls.Add(pnlSubDashboard);
         _bottomTabs.TabPages.Add(tabSub);
 
         // Tab 4: Post-Process Tracking
@@ -1083,6 +1141,7 @@ public class WorkflowMainForm : Form
                     _canvas.Clear();
                     _canvas.Nodes.AddRange(data.Nodes);
                     _canvas.Edges.AddRange(data.Edges);
+                    if (data.TitleBoxes != null) _canvas.TitleBoxes.AddRange(data.TitleBoxes);
                     _canvas.IsWorkflowConfirmed = data.IsConfirmed;
                     _canvas.ConfirmedInfoText = data.ConfirmedBy;
                     _canvas.Invalidate();
@@ -1108,6 +1167,7 @@ public class WorkflowMainForm : Form
                     _canvas.Clear();
                     _canvas.Nodes.AddRange(data.Nodes);
                     _canvas.Edges.AddRange(data.Edges);
+                    if (data.TitleBoxes != null) _canvas.TitleBoxes.AddRange(data.TitleBoxes);
                     _canvas.IsWorkflowConfirmed = data.IsConfirmed;
                     _canvas.ConfirmedInfoText = data.ConfirmedBy;
                     _canvas.Invalidate();
@@ -1189,6 +1249,107 @@ public class WorkflowMainForm : Form
         }
     }
 
+
+    
+
+    private void AddTitleGroupBox()
+    {
+        using var dlg = new InputTitleBoxDialog();
+        if (dlg.ShowDialog(this) == DialogResult.OK)
+        {
+            var box = new WorkflowTitleBox
+            {
+                Title = dlg.BoxTitle,
+                ColorHex = dlg.BoxColorHex
+            };
+
+            if (_canvas.SelectedNodes.Count > 0)
+            {
+                float minX = _canvas.SelectedNodes.Min(n => n.X) - 30;
+                float minY = _canvas.SelectedNodes.Min(n => n.Y) - 50;
+                float maxX = _canvas.SelectedNodes.Max(n => n.X + n.Width) + 30;
+                float maxY = _canvas.SelectedNodes.Max(n => n.Y + n.Height) + 30;
+
+                box.X = Math.Max(20, minX);
+                box.Y = Math.Max(20, minY);
+                box.Width = Math.Max(220, maxX - box.X);
+                box.Height = Math.Max(120, maxY - box.Y);
+            }
+            else
+            {
+                box.X = 100;
+                box.Y = 100;
+                box.Width = 420;
+                box.Height = 260;
+            }
+
+            _canvas.TitleBoxes.Add(box);
+            _canvas.Invalidate();
+            AutoSaveWorkflow();
+            MessageBox.Show($"타이틀 그룹 박스 '{box.Title}'가 추가되었습니다.\r\n박스 헤더를 잡고 드래그하면 내부 노드가 함께 이동하며, 우측 하단 모서리로 크기를 조절할 수 있습니다.", "타이틀 박스 추가", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+    }
+
+    private void ToggleTimelineGuides()
+    {
+        _canvas.ShowTimelineGuides = !_canvas.ShowTimelineGuides;
+        if (_btnToggleTimelineGuides != null)
+        {
+            _btnToggleTimelineGuides.Text = _canvas.ShowTimelineGuides ? "⏱ 타임라인선: 켜짐" : "⏱ 타임라인선: 꺼짐";
+            _btnToggleTimelineGuides.BackColor = _canvas.ShowTimelineGuides ? Color.FromArgb(16, 185, 129) : Palette.Bg800;
+        }
+        _canvas.Invalidate();
+    }
+
+    private void PromptEditTitleBox(WorkflowTitleBox box)
+    {
+        using var dlg = new InputTitleBoxDialog(box.Title, box.ColorHex);
+        if (dlg.ShowDialog(this) == DialogResult.OK)
+        {
+            box.Title = dlg.BoxTitle;
+            box.ColorHex = dlg.BoxColorHex;
+            _canvas.Invalidate();
+            AutoSaveWorkflow();
+        }
+    }
+
+    private async void OpenSubWorkerDispatchModal(string defaultSubWorker = "이서브", string defaultLocation = "R01")
+    {
+        string currentOrder = _cboOrders.SelectedIndex >= 0 && _cboOrders.SelectedIndex < _cachedOrders.Count
+            ? _cachedOrders[_cboOrders.SelectedIndex].GetProperty("orderNumber").GetString() ?? "" : "";
+        string currentPart = _lstParts.SelectedItem?.ToString() ?? "";
+
+        using var dlg = new SubWorkerDispatchDialog(defaultSubWorker, defaultLocation, currentOrder, currentPart);
+        if (dlg.ShowDialog(this) == DialogResult.OK)
+        {
+            try
+            {
+                bool ok = await _api.CreateSubWorkerTaskAsync(
+                    dlg.SelectedLocation,
+                    dlg.OrderNumber,
+                    dlg.PartName,
+                    _session.DisplayName ?? _session.Username,
+                    dlg.SelectedSubWorker,
+                    dlg.Instruction
+                );
+
+                if (ok)
+                {
+                    MessageBox.Show($"[서브인원 작업 지시 완료]\r\n담당 서브인원: {dlg.SelectedSubWorker}\r\n배치 위치: {dlg.SelectedLocation}\r\n지시 내용: {dlg.Instruction}", "지시 전송 성공", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    await LoadHistoryGridsAsync();
+                }
+                else
+                {
+                    MessageBox.Show("서브인원 작업 지시 등록에 실패하였습니다.", "등록 실패", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"서브인원 작업 지시 전송 중 오류: {ex.Message}", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+    }
+
     private void SaveCurrentWorkflowAsTemplate()
     {
         if (_canvas.Nodes.Count == 0)
@@ -1211,7 +1372,8 @@ public class WorkflowMainForm : Form
                     dlg.TargetMaterial,
                     dlg.FixingMethod,
                     _canvas.Nodes,
-                    _canvas.Edges
+                    _canvas.Edges,
+                    _canvas.TitleBoxes
                 );
                 MessageBox.Show($"'{dlg.TemplateName}' 템플릿이 성공적으로 저장되었습니다.\r\n언제든 [📂 템플릿 불러오기]에서 재사용할 수 있습니다.", "템플릿 저장 완료", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
@@ -1235,13 +1397,14 @@ public class WorkflowMainForm : Form
             }
             string partName = _lstParts.SelectedItem?.ToString() ?? t.Name;
 
-            var (newNodes, newEdges) = TemplateManager.InstantiateTemplate(t, orderNo, partName);
+            var (newNodes, newEdges, newBoxes) = TemplateManager.InstantiateTemplate(t, orderNo, partName);
 
             _canvas.Clear();
             ResetWorkflowConfirmation();
 
             _canvas.Nodes.AddRange(newNodes);
             _canvas.Edges.AddRange(newEdges);
+            _canvas.TitleBoxes.AddRange(newBoxes);
             _canvas.ArrangeByTimeline();
 
             _canvas.SelectedNode = _canvas.Nodes.FirstOrDefault();
@@ -1687,6 +1850,7 @@ public class WorkflowMainForm : Form
                 PartName = _lstParts.SelectedItem?.ToString() ?? "",
                 Nodes = _canvas.Nodes.ToList(),
                 Edges = _canvas.Edges.ToList(),
+                TitleBoxes = _canvas.TitleBoxes.ToList(),
                 LastSavedAt = DateTime.Now
             };
 
@@ -1988,20 +2152,13 @@ public class WorkflowMainForm : Form
 
     private void DuplicateSelectedNode(WorkflowNode node)
     {
-        var dup = new WorkflowNode
+        var dups = _canvas.DuplicateSelectedNodes();
+        if (dups.Count > 0)
         {
-            Title = $"{node.Title} (복사본)",
-            Category = node.Category,
-            Status = NodeStatus.Ready,
-            OrderNumber = node.OrderNumber,
-            PartName = node.PartName,
-            MachineId = node.MachineId,
-            Assignee = node.Assignee,
-            Details = node.Details,
-            X = node.X + 40,
-            Y = node.Y + 40
-        };
-        _canvas.AddNode(dup);
+            if (dups.Count > 1) _detailPanel.BindNodes(dups);
+            else _detailPanel.BindNode(dups[0]);
+            AutoSaveWorkflow();
+        }
     }
 
     private void UpdateWorkflowStats()
@@ -2176,23 +2333,66 @@ public class WorkflowMainForm : Form
                 }
             }
 
-            // 3. Sub Worker Tasks
+            // 3. Sub-worker tasks & Real-time Live Status Dashboard Cards
             var subTasks = await _api.GetSubWorkerTasksAsync();
             if (subTasks != null)
             {
                 _gridSubTasks.Rows.Clear();
+                var subWorkerLatest = new Dictionary<string, (string Loc, string Status, string Task, string Time)>();
+
                 foreach (var st in subTasks)
                 {
-                    string id = st.TryGetProperty("id", out var i) ? i.GetInt32().ToString() : "";
-                    string mach = st.TryGetProperty("machineId", out var m) ? m.GetString() ?? "" : "";
+                    string date = st.TryGetProperty("createdAt", out var dt) ? dt.GetString() ?? "" : "";
+                    string mach = st.TryGetProperty("machineId", out var m) ? m.GetString() ?? "R01" : "R01";
                     string order = st.TryGetProperty("orderNumber", out var o) ? o.GetString() ?? "" : "";
                     string part = st.TryGetProperty("partName", out var p) ? p.GetString() ?? "" : "";
-                    string worker = st.TryGetProperty("subWorkerName", out var sw) ? sw.GetString() ?? "" : "";
+                    string worker = st.TryGetProperty("subWorkerName", out var sw) ? sw.GetString() ?? "이서브" : "이서브";
                     string instr = st.TryGetProperty("instruction", out var ins) ? ins.GetString() ?? "" : "";
-                    string report = st.TryGetProperty("reportContent", out var rep) ? rep.GetString() ?? "" : "";
-                    string status = st.TryGetProperty("status", out var stt) ? stt.GetString() ?? "" : "";
+                    string leader = st.TryGetProperty("leaderUsername", out var ld) ? ld.GetString() ?? "-" : "-";
+                    string status = st.TryGetProperty("status", out var stt) ? stt.GetString() ?? "지시중" : "지시중";
+                    string report = st.TryGetProperty("reportContent", out var rep) ? rep.GetString() ?? "-" : "-";
 
-                    _gridSubTasks.Rows.Add(id, mach, order, part, worker, instr, report, status);
+                    _gridSubTasks.Rows.Add(date, worker, mach, status, instr, $"[{order}] {part}", leader, report);
+
+                    if (!subWorkerLatest.ContainsKey(worker))
+                    {
+                        subWorkerLatest[worker] = (mach, status, instr, date);
+                    }
+                }
+
+                // Update Top Live Cards Bar
+                if (_pnlSubWorkerCards != null)
+                {
+                    _pnlSubWorkerCards.Controls.Clear();
+                    var allKnownSubs = new string[] { "이서브", "김보조", "박지원", "최도움" };
+                    foreach (var name in allKnownSubs)
+                    {
+                        string loc = subWorkerLatest.TryGetValue(name, out var info) ? info.Loc : "R01";
+                        string stat = subWorkerLatest.TryGetValue(name, out info) ? info.Status : "대기중";
+                        string taskDesc = subWorkerLatest.TryGetValue(name, out info) ? info.Task : "대기 (지시가능)";
+
+                        Color statCol = stat.Contains("완료") ? Palette.AccentSky : (stat.Contains("가공") || stat.Contains("작업") ? Palette.Green : Palette.Amber);
+
+                        var card = new Button
+                        {
+                            Text = $"👤 {name}  |  📍 {loc}  |  [{stat}]",
+                            BackColor = Color.FromArgb(24, 34, 53),
+                            ForeColor = statCol,
+                            FlatStyle = FlatStyle.Flat,
+                            AutoSize = true,
+                            Height = 28,
+                            Margin = new Padding(2, 2, 6, 2),
+                            Padding = new Padding(6, 2, 6, 2),
+                            Font = new Font("맑은 고딕", 8f, FontStyle.Bold),
+                            Cursor = Cursors.Hand
+                        };
+                        card.FlatAppearance.BorderColor = Color.FromArgb(80, statCol);
+                        card.FlatAppearance.BorderSize = 1;
+                        string capturedName = name;
+                        string capturedLoc = loc;
+                        card.Click += (s, e) => OpenSubWorkerDispatchModal(capturedName, capturedLoc);
+                        _pnlSubWorkerCards.Controls.Add(card);
+                    }
                 }
             }
 
@@ -2439,6 +2639,7 @@ public class WorkflowMainForm : Form
                 PartName = _lstParts.SelectedItem?.ToString() ?? "",
                 Nodes = _canvas.Nodes.ToList(),
                 Edges = _canvas.Edges.ToList(),
+                TitleBoxes = _canvas.TitleBoxes.ToList(),
                 LastSavedAt = DateTime.Now,
                 IsConfirmed = _canvas.IsWorkflowConfirmed,
                 ConfirmedBy = _canvas.ConfirmedInfoText
@@ -2483,6 +2684,7 @@ public class WorkflowMainForm : Form
                     _canvas.Clear();
                     _canvas.Nodes.AddRange(data.Nodes);
                     _canvas.Edges.AddRange(data.Edges);
+                    if (data.TitleBoxes != null) _canvas.TitleBoxes.AddRange(data.TitleBoxes);
                     _canvas.IsWorkflowConfirmed = data.IsConfirmed;
                     _canvas.ConfirmedInfoText = data.ConfirmedBy;
                     _canvas.Invalidate();
