@@ -34,7 +34,9 @@ public class WorkflowMainForm : Form
     private Label _lblActiveMachineSummary = null!;
     private Label _lblLiveClock = null!;
     private Button _btnRefreshAll = null!;
-    private Button _btnSwitchToClassic = null!;
+    private Button _btnOpenNoticesTop = null!;
+    private Label _lblAutoSaveBadge = null!;
+    private Label _lblTopNoticeBanner = null!;
 
     // 2, 3, 4. Left Sidebar
     private ComboBox _cboOrders = null!;
@@ -105,7 +107,7 @@ public class WorkflowMainForm : Form
 
     private void InitializeUI()
     {
-        Text = $"CNC-MES 스마트 현장 터미널 v1.4.4 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
+        Text = $"CNC-MES 스마트 현장 터미널 v1.4.5 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
         Size = new Size(1600, 960);
         MinimumSize = new Size(1280, 720);
         StartPosition = FormStartPosition.CenterScreen;
@@ -164,6 +166,7 @@ public class WorkflowMainForm : Form
         await LoadNoticesAsync();
         await LoadChatAsync();
         await LoadHistoryGridsAsync();
+        TryRestoreAutoSavedWorkflow();
 
         // 1-second live clock
         var liveTimer = new System.Windows.Forms.Timer { Interval = 1000 };
@@ -213,7 +216,7 @@ public class WorkflowMainForm : Form
         pnlBrand.Controls.Add(pnlIcon);
 
         var lblBrand = new Label { Text = "CNC-MES", Location = new Point(44, 8), Font = new Font("맑은 고딕", 12f, FontStyle.Bold), ForeColor = Color.White, AutoSize = true };
-        var lblVer = new Label { Text = "v1.4.4 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
+        var lblVer = new Label { Text = "v1.4.5 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
         var lblStatus = new Label { Text = "● 서버 정상", Location = new Point(245, 11), Font = new Font("맑은 고딕", 8f, FontStyle.Bold), ForeColor = Palette.Green, BackColor = Color.FromArgb(80, 6, 78, 59), AutoSize = true, Padding = new Padding(5, 1, 5, 1) };
         var lblSub = new Label { Text = "WORKFLOW-BASED OPERATOR CONTROL SYSTEM", Location = new Point(45, 30), Font = new Font("Consolas", 7.2f), ForeColor = Palette.TextSlate400, AutoSize = true };
         pnlBrand.Controls.AddRange(new Control[] { lblBrand, lblVer, lblStatus, lblSub });
@@ -321,14 +324,21 @@ public class WorkflowMainForm : Form
         pnlCenter.Controls.Add(pnlCenterBox);
         topBar.Controls.Add(pnlCenter, 1, 0);
 
-        // Right Actions (View Switcher & User Profile)
+        // Right Actions (AutoSave Badge, Notices, User Profile - Classic View Removed)
         var pnlRight = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) };
 
-        _btnSwitchToClassic = CreateFlatButton("🔀 클래식 터미널 뷰", Color.FromArgb(2, 132, 199), Color.White, 150, 34);
-        _btnSwitchToClassic.Location = new Point(290, 9);
-        _btnSwitchToClassic.Click += (s, e) => SwitchToClassicView();
+        _lblAutoSaveBadge = new Label
+        {
+            Text = "💾 실시간 자동저장 대기",
+            Font = new Font("맑은 고딕", 8.0f, FontStyle.Bold),
+            ForeColor = Palette.TextSlate400,
+            BackColor = Color.FromArgb(40, 15, 23, 42),
+            Size = new Size(145, 34),
+            Location = new Point(295, 9),
+            TextAlign = ContentAlignment.MiddleCenter
+        };
 
-        var pnlUser = new Panel { Size = new Size(140, 34), Location = new Point(142, 9), BackColor = Palette.Bg800 };
+        var pnlUser = new Panel { Size = new Size(135, 34), Location = new Point(152, 9), BackColor = Palette.Bg800 };
         pnlUser.Paint += (s, e) =>
         {
             using var pen = new Pen(Palette.Border, 1);
@@ -338,13 +348,17 @@ public class WorkflowMainForm : Form
             using var fontA = new Font("맑은 고딕", 8.5f, FontStyle.Bold);
             using var brushSky = new SolidBrush(Palette.AccentSky);
             e.Graphics.DrawString("a", fontA, brushSky, new PointF(12, 8));
-            using var fontTxt = new Font("맑은 고딕", 8.5f, FontStyle.Bold);
+            using var fontTxt = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
             using var brushTxt = new SolidBrush(Palette.TextSlate300);
             e.Graphics.DrawString($"작업자 [{_session.DisplayName}]", fontTxt, brushTxt, new PointF(33, 8));
         };
 
+        _btnOpenNoticesTop = CreateFlatButton("📢 공지목록", Palette.Bg800, Palette.Amber, 90, 34);
+        _btnOpenNoticesTop.Location = new Point(54, 9);
+        _btnOpenNoticesTop.Click += async (s, e) => await ShowNoticesDialogAsync();
+
         _btnRefreshAll = CreateFlatButton("🔄", Palette.Bg800, Palette.TextSlate300, 34, 34);
-        _btnRefreshAll.Location = new Point(100, 9);
+        _btnRefreshAll.Location = new Point(12, 9);
         _btnRefreshAll.Click += async (s, e) => await RefreshAllAsync();
 
         _lblConfirmedStatusBadge = new Label
@@ -353,12 +367,12 @@ public class WorkflowMainForm : Form
             Font = new Font("Consolas", 8.8f, FontStyle.Bold),
             ForeColor = Palette.Green,
             BackColor = Color.FromArgb(70, 6, 78, 59),
-            Size = new Size(130, 32),
+            Size = new Size(110, 32),
             Location = new Point(0, 10),
             TextAlign = ContentAlignment.MiddleCenter,
             Visible = false
         };
-        pnlRight.Controls.AddRange(new Control[] { _lblConfirmedStatusBadge, _btnRefreshAll, pnlUser, _btnSwitchToClassic });
+        pnlRight.Controls.AddRange(new Control[] { _lblConfirmedStatusBadge, _btnRefreshAll, _btnOpenNoticesTop, pnlUser, _lblAutoSaveBadge });
         topBar.Controls.Add(pnlRight, 2, 0);
 
         return topBar;
@@ -375,7 +389,7 @@ public class WorkflowMainForm : Form
             Padding = new Padding(0)
         };
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 210f)); // Card 1: 6 Action Buttons (2x3 grid, clean spacing, no clipping)
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 235f)); // Card 1: 6 Action Buttons (Height 235px, plenty of vertical room)
         panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));  // Card 2: Orders & Parts List (Full remaining height)
 
         // Card 1: Workflow Menu Buttons (6 Action Buttons per spec)
@@ -384,7 +398,7 @@ public class WorkflowMainForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 2,
             RowCount = 3,
-            Margin = new Padding(0),
+            Margin = new Padding(2, 6, 2, 2),
             Padding = new Padding(1)
         };
         menuGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
@@ -758,58 +772,92 @@ public class WorkflowMainForm : Form
         };
         _detailPanel.SubWorkerTaskSendRequested += async (node, subWorker, instruction) => await SendSubWorkerTaskAsync(node, subWorker, instruction);
         _detailPanel.IssueDialogRequested += (node) => OpenIssueDialog(node);
+        _detailPanel.NodeUpdated += (node) => AutoSaveWorkflow();
+        _detailPanel.NodesUpdated += (nodes) => AutoSaveWorkflow();
+        _detailPanel.StatusChangeRequested += (node, status) => AutoSaveWorkflow();
+        _detailPanel.BatchStatusChangeRequested += (nodes, status) => AutoSaveWorkflow();
+        _detailPanel.NodeDeleteRequested += (node) => AutoSaveWorkflow();
+        _detailPanel.BatchNodesDeleteRequested += (nodes) => AutoSaveWorkflow();
+
         _canvas.IssueBadgeClicked += (node) => OpenIssueDialog(node);
+        _canvas.WorkflowChanged += () => AutoSaveWorkflow();
+
+        Deactivate += (s, e) => AutoSaveWorkflow();
+        FormClosing += (s, e) => AutoSaveWorkflow();
+
         panel.Controls.Add(_detailPanel, 0, 0);
 
-        // 2: Tabbed Communication Card (Notices & Live Chat)
-        var commTabs = new TabControl
+        // 2: Dedicated Always-Visible Realtime Chat Card with Top Notice Banner
+        var pnlChatCardBody = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            Font = new Font("맑은 고딕", 8.8f, FontStyle.Bold)
+            ColumnCount = 1,
+            RowCount = 3,
+            Margin = new Padding(0),
+            Padding = new Padding(2)
         };
+        pnlChatCardBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 26f)); // Notice & Channel Header
+        pnlChatCardBody.RowStyles.Add(new RowStyle(SizeType.Percent, 100f)); // Chat Message Stream
+        pnlChatCardBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 32f)); // Message Input Bar
 
-        // Tab 1: Notices
-        var tabNotice = new TabPage(" 📢 공지사항 및 작지 알림 ") { BackColor = Palette.Bg900 };
-        var pnlNoticeBody = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(0) };
-        pnlNoticeBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 26f));
-        pnlNoticeBody.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+        // Row 0: Top Banner with Notice ticker & Channel dropdown
+        var pnlChatTop = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = new Padding(0) };
+        pnlChatTop.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55f));
+        pnlChatTop.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45f));
 
-        var pnlNoticeHeader = new Panel { Dock = DockStyle.Fill };
-        _lblNoticeBadge = new Label { Text = "0건 미확인", Dock = DockStyle.Right, AutoSize = true, ForeColor = Palette.Amber, Font = new Font("맑은 고딕", 7.8f, FontStyle.Bold) };
-        var btnOpenNotices = CreateFlatButton("목록 상세열기", Palette.Bg800, Palette.AccentSky, 90, 20);
-        btnOpenNotices.Dock = DockStyle.Left;
-        btnOpenNotices.Click += async (s, e) => await ShowNoticesDialogAsync();
-        pnlNoticeHeader.Controls.AddRange(new Control[] { btnOpenNotices, _lblNoticeBadge });
+        _lblTopNoticeBanner = new Label
+        {
+            Text = "📢 공지: 등록된 최신 공지가 없습니다.",
+            Font = new Font("맑은 고딕", 7.6f, FontStyle.Bold),
+            ForeColor = Palette.Amber,
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Cursor = Cursors.Hand
+        };
+        _lblTopNoticeBanner.Click += async (s, e) => await ShowNoticesDialogAsync();
 
-        _lstNotices = new ListBox { Dock = DockStyle.Fill, BackColor = Palette.Bg850, ForeColor = Palette.TextSlate300, BorderStyle = BorderStyle.None, Font = new Font("맑은 고딕", 8.2f) };
-        _lstNotices.DoubleClick += async (s, e) => await ShowNoticesDialogAsync();
-
-        pnlNoticeBody.Controls.Add(pnlNoticeHeader, 0, 0);
-        pnlNoticeBody.Controls.Add(_lstNotices, 0, 1);
-        tabNotice.Controls.Add(pnlNoticeBody);
-        commTabs.TabPages.Add(tabNotice);
-
-        // Tab 2: Realtime Chat
-        var tabChat = new TabPage(" 💬 현장 실시간 채팅 ") { BackColor = Palette.Bg900 };
-        var pnlChatBody = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Margin = new Padding(0) };
-        pnlChatBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 26f)); // Channel selector
-        pnlChatBody.RowStyles.Add(new RowStyle(SizeType.Percent, 100f)); // Chat messages
-        pnlChatBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 30f)); // Chat input
-
-        _cboChatChannel = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList, BackColor = Palette.Bg850, ForeColor = Color.White, Font = new Font("맑은 고딕", 8.2f) };
-        _cboChatChannel.Items.AddRange(new object[] { "🌐 전체 공통 채널", "⚙ R01 작업 채널", "⚙ R02 작업 채널", "🚨 품질/이슈 채널" });
+        _cboChatChannel = new ComboBox
+        {
+            Dock = DockStyle.Fill,
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            BackColor = Palette.Bg850,
+            ForeColor = Color.White,
+            Font = new Font("맑은 고딕", 8.0f)
+        };
+        _cboChatChannel.Items.AddRange(new object[] { "🌐 전체 공통", "⚙ R01 전용", "⚙ R02 전용", "🚨 이슈/품질" });
         _cboChatChannel.SelectedIndex = 0;
         _cboChatChannel.SelectedIndexChanged += async (s, e) => await LoadChatAsync();
-        pnlChatBody.Controls.Add(_cboChatChannel, 0, 0);
 
-        _lstChat = new ListBox { Dock = DockStyle.Fill, BackColor = Palette.Bg850, ForeColor = Palette.TextWhite, BorderStyle = BorderStyle.None, Font = new Font("맑은 고딕", 8.2f) };
-        pnlChatBody.Controls.Add(_lstChat, 0, 1);
+        pnlChatTop.Controls.Add(_lblTopNoticeBanner, 0, 0);
+        pnlChatTop.Controls.Add(_cboChatChannel, 1, 0);
+        pnlChatCardBody.Controls.Add(pnlChatTop, 0, 0);
 
+        // Row 1: Chat Message ListBox
+        _lstChat = new ListBox
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Palette.Bg850,
+            ForeColor = Palette.TextWhite,
+            BorderStyle = BorderStyle.None,
+            Font = new Font("맑은 고딕", 8.4f),
+            ItemHeight = 19
+        };
+        pnlChatCardBody.Controls.Add(_lstChat, 0, 1);
+
+        // Row 2: Message Input & Send Button
         var pnlChatSend = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = new Padding(0) };
         pnlChatSend.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        pnlChatSend.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 55f));
+        pnlChatSend.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 60f));
 
-        _txtChatInput = new TextBox { Dock = DockStyle.Fill, BackColor = Palette.Bg850, ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle, Font = new Font("맑은 고딕", 8.5f), PlaceholderText = "메시지 입력..." };
+        _txtChatInput = new TextBox
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Palette.Bg850,
+            ForeColor = Color.White,
+            BorderStyle = BorderStyle.FixedSingle,
+            Font = new Font("맑은 고딕", 8.8f),
+            PlaceholderText = "메시지 입력 (Enter로 전송)..."
+        };
         _txtChatInput.KeyDown += async (s, e) => { if (e.KeyCode == Keys.Enter) await SendChatAsync(); };
 
         _btnSendChat = CreateFlatButton("전송 ✈", Palette.AccentSky, Color.White);
@@ -817,13 +865,10 @@ public class WorkflowMainForm : Form
 
         pnlChatSend.Controls.Add(_txtChatInput, 0, 0);
         pnlChatSend.Controls.Add(_btnSendChat, 1, 0);
-        pnlChatBody.Controls.Add(pnlChatSend, 0, 2);
+        pnlChatCardBody.Controls.Add(pnlChatSend, 0, 2);
 
-        tabChat.Controls.Add(pnlChatBody);
-        commTabs.TabPages.Add(tabChat);
-
-        var cardComms = CreateCard("📡 현장 알림 및 실시간 소통", commTabs);
-        panel.Controls.Add(cardComms, 0, 1);
+        var cardChat = CreateCard("💬 현장 실시간 소통 채팅", pnlChatCardBody);
+        panel.Controls.Add(cardChat, 0, 1);
 
         return panel;
     }
@@ -1002,8 +1047,11 @@ public class WorkflowMainForm : Form
                     _canvas.Clear();
                     _canvas.Nodes.AddRange(data.Nodes);
                     _canvas.Edges.AddRange(data.Edges);
+                    _canvas.IsWorkflowConfirmed = data.IsConfirmed;
+                    _canvas.ConfirmedInfoText = data.ConfirmedBy;
                     _canvas.Invalidate();
                     _canvas.SelectedNode = _canvas.Nodes.FirstOrDefault();
+                    _detailPanel.BindNode(_canvas.SelectedNode);
                     UpdateWorkflowStats();
                     return;
                 }
@@ -1011,7 +1059,38 @@ public class WorkflowMainForm : Form
             catch { }
         }
 
-        // If no cached workflow exists, clear canvas so the empty guide displays
+        // Check if there is an active autosaved workflow so user work is NEVER lost!
+        string activeFile = Path.Combine(_localWorkflowDir, "autosave_current_active.json");
+        if (File.Exists(activeFile))
+        {
+            try
+            {
+                string json = File.ReadAllText(activeFile);
+                var data = JsonSerializer.Deserialize<WorkflowData>(json);
+                if (data != null && data.Nodes.Count > 0)
+                {
+                    _canvas.Clear();
+                    _canvas.Nodes.AddRange(data.Nodes);
+                    _canvas.Edges.AddRange(data.Edges);
+                    _canvas.IsWorkflowConfirmed = data.IsConfirmed;
+                    _canvas.ConfirmedInfoText = data.ConfirmedBy;
+                    _canvas.Invalidate();
+                    _canvas.SelectedNode = _canvas.Nodes.FirstOrDefault();
+                    _detailPanel.BindNode(_canvas.SelectedNode);
+                    UpdateWorkflowStats();
+                    return;
+                }
+            }
+            catch { }
+        }
+
+        // If currently nodes exist on canvas, keep them and auto-save instead of wiping out!
+        if (_canvas.Nodes.Count > 0)
+        {
+            AutoSaveWorkflow();
+            return;
+        }
+
         _canvas.Clear();
         UpdateWorkflowStats();
     }
@@ -1399,9 +1478,11 @@ public class WorkflowMainForm : Form
 
     private async void OpenIssueDialog(WorkflowNode node)
     {
+        AutoSaveWorkflow();
         using var dlg = new IssueDetailDialog(node, _session.DisplayName);
         if (dlg.ShowDialog(this) == DialogResult.OK)
         {
+            AutoSaveWorkflow();
             _canvas.Invalidate();
             _detailPanel.BindNode(node);
             UpdateWorkflowStats();
@@ -1724,11 +1805,13 @@ public class WorkflowMainForm : Form
             var list = await _api.GetNoticesAsync();
             if (list != null)
             {
-                _lstNotices.Items.Clear();
+                if (_lstNotices != null) _lstNotices.Items.Clear();
                 int unread = 0;
+                string firstNoticeTitle = "";
                 foreach (var n in list)
                 {
                     string title = n.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "";
+                    if (string.IsNullOrEmpty(firstNoticeTitle)) firstNoticeTitle = title;
                     string date = n.TryGetProperty("createdAt", out var cd) ? cd.GetString() ?? "" : "";
                     string acks = n.TryGetProperty("officialAcksJson", out var ak) ? ak.GetString() ?? "" : "";
                     bool isAcked = acks.Contains(_session.Username) || acks.Contains(_session.DisplayName);
@@ -1737,10 +1820,24 @@ public class WorkflowMainForm : Form
                     string badge = isAcked ? "✔" : "🔔";
                     if (!isAcked) unread++;
 
-                    _lstNotices.Items.Add($"{badge} {title} ({date})");
+                    if (_lstNotices != null) _lstNotices.Items.Add($"{badge} {title} ({date})");
                 }
-                _lblNoticeBadge.Text = unread > 0 ? $"{unread}건 미확인" : "전원 확인완료";
-                _lblNoticeBadge.ForeColor = unread > 0 ? Palette.Amber : Palette.Green;
+                if (_lblNoticeBadge != null)
+                {
+                    _lblNoticeBadge.Text = unread > 0 ? $"{unread}건 미확인" : "전원 확인완료";
+                    _lblNoticeBadge.ForeColor = unread > 0 ? Palette.Amber : Palette.Green;
+                }
+                if (_btnOpenNoticesTop != null)
+                {
+                    _btnOpenNoticesTop.Text = unread > 0 ? $"🔔 공지({unread})" : "📢 공지사항";
+                    _btnOpenNoticesTop.ForeColor = unread > 0 ? Palette.Amber : Palette.AccentSky;
+                }
+                if (_lblTopNoticeBanner != null)
+                {
+                    _lblTopNoticeBanner.Text = string.IsNullOrEmpty(firstNoticeTitle)
+                        ? "📢 등록된 최신 공지가 없습니다."
+                        : $"📢 최신: {firstNoticeTitle} (클릭시 전체목록)";
+                }
             }
         }
         catch { }
@@ -1897,14 +1994,84 @@ public class WorkflowMainForm : Form
         catch { }
     }
 
-    // VIEW SWITCHER (Seamless Recovery & Toggle between Workflow & Classic UI)
     // =========================================================================
-    private void SwitchToClassicView()
+    // REALTIME AUTO-SAVE & RECOVERY SYSTEM
+    // =========================================================================
+    private void AutoSaveWorkflow()
     {
-        var classicForm = new MainWorkerForm(_api, _session);
-        classicForm.Show();
-        Hide();
-        classicForm.FormClosed += (s, e) => Close();
+        if (_canvas == null || _canvas.Nodes.Count == 0) return;
+        try
+        {
+            var data = new WorkflowData
+            {
+                OrderId = _cachedOrders.Count > 0 && _cboOrders.SelectedIndex >= 0 ? 1 : 0,
+                OrderNumber = _cboOrders.SelectedIndex >= 0 && _cboOrders.SelectedIndex < _cachedOrders.Count
+                    ? _cachedOrders[_cboOrders.SelectedIndex].GetProperty("orderNumber").GetString() ?? "" : "",
+                PartName = _lstParts.SelectedItem?.ToString() ?? "",
+                Nodes = _canvas.Nodes.ToList(),
+                Edges = _canvas.Edges.ToList(),
+                LastSavedAt = DateTime.Now,
+                IsConfirmed = _canvas.IsWorkflowConfirmed,
+                ConfirmedBy = _canvas.ConfirmedInfoText
+            };
+
+            // 1. Global active autosave file
+            string activeFile = Path.Combine(_localWorkflowDir, "autosave_current_active.json");
+            string json = JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(activeFile, json);
+
+            // 2. Part cache file synchronization
+            string cacheKey = GetCurrentPartCacheKey();
+            if (!string.IsNullOrEmpty(cacheKey))
+            {
+                string partFile = Path.Combine(_localWorkflowDir, $"{cacheKey}.json");
+                File.WriteAllText(partFile, json);
+            }
+
+            if (_lblAutoSaveBadge != null)
+            {
+                _lblAutoSaveBadge.Text = $"💾 자동저장 ({DateTime.Now:HH:mm:ss})";
+                _lblAutoSaveBadge.ForeColor = Palette.Green;
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[AutoSave Error] {ex.Message}");
+        }
+    }
+
+    private bool TryRestoreAutoSavedWorkflow()
+    {
+        try
+        {
+            string activeFile = Path.Combine(_localWorkflowDir, "autosave_current_active.json");
+            if (File.Exists(activeFile))
+            {
+                string json = File.ReadAllText(activeFile);
+                var data = JsonSerializer.Deserialize<WorkflowData>(json);
+                if (data != null && data.Nodes.Count > 0)
+                {
+                    _canvas.Clear();
+                    _canvas.Nodes.AddRange(data.Nodes);
+                    _canvas.Edges.AddRange(data.Edges);
+                    _canvas.IsWorkflowConfirmed = data.IsConfirmed;
+                    _canvas.ConfirmedInfoText = data.ConfirmedBy;
+                    _canvas.Invalidate();
+                    _canvas.SelectedNode = _canvas.Nodes.FirstOrDefault();
+                    _detailPanel.BindNode(_canvas.SelectedNode);
+                    UpdateWorkflowStats();
+
+                    if (_lblAutoSaveBadge != null)
+                    {
+                        _lblAutoSaveBadge.Text = $"📂 자동복원됨 ({data.LastSavedAt:HH:mm})";
+                        _lblAutoSaveBadge.ForeColor = Palette.AccentSky;
+                    }
+                    return true;
+                }
+            }
+        }
+        catch { }
+        return false;
     }
 
     // =========================================================================
