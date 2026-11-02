@@ -30,8 +30,9 @@ public class LoginForm : Form
 
     private void InitializeComponents()
     {
-        Text = "CNC-MES 현장 작업자 클라이언트 v1.4.2 (내부망 전용)";
-        Size = new Size(560, 580);
+        Text = "CNC-MES 현장 작업자 클라이언트 v1.4.3 (내부망 전용)";
+        ClientSize = new Size(550, 620);
+        MinimumSize = new Size(550, 620);
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -135,8 +136,8 @@ public class LoginForm : Form
         // Tab Control (로그인 vs 회원가입)
         var tabControl = new TabControl
         {
-            Location = new Point(20, 210),
-            Size = new Size(500, 315)
+            Location = new Point(20, 205),
+            Size = new Size(500, 385)
         };
 
         // Tab 1: 로그인 (담당 장비 선택 제거 — 메인 화면에서 다중 장비 자유 선택)
@@ -180,7 +181,7 @@ public class LoginForm : Form
         {
             Text = "🚀 작업자 로그인 (다중 장비 통합 관제 시작)",
             Location = new Point(20, 198),
-            Size = new Size(440, 48),
+            Size = new Size(456, 48),
             BackColor = Color.FromArgb(37, 99, 235),
             ForeColor = Color.White,
             FlatStyle = FlatStyle.Flat,
@@ -203,47 +204,50 @@ public class LoginForm : Form
         var lblRegNotice = new Label
         {
             Text = "신규 작업자는 여기서 아이디와 비밀번호를 직접 생성합니다.\n등록된 계정의 권한 및 비밀번호 변경은 관리자 화면에서 관리됩니다.",
-            Location = new Point(20, 15),
-            Size = new Size(440, 40),
+            Location = new Point(20, 14),
+            Size = new Size(456, 38),
             ForeColor = Color.FromArgb(148, 163, 184)
         };
 
-        var lblRegUser = new Label { Text = "희망 아이디 (영문/숫자):", Location = new Point(20, 65), AutoSize = true };
+        var lblRegUser = new Label { Text = "희망 아이디 (영문/숫자):", Location = new Point(20, 60), AutoSize = true };
         _txtRegUser = new TextBox
         {
-            Location = new Point(20, 90),
-            Size = new Size(440, 25),
+            Location = new Point(20, 84),
+            Size = new Size(456, 26),
             BackColor = Color.FromArgb(15, 23, 42),
             ForeColor = Color.White,
-            BorderStyle = BorderStyle.FixedSingle
+            BorderStyle = BorderStyle.FixedSingle,
+            Font = new Font("맑은 고딕", 9.5f)
         };
 
-        var lblRegName = new Label { Text = "작업자 성명 (예: 김철수):", Location = new Point(20, 130), AutoSize = true };
+        var lblRegName = new Label { Text = "작업자 성명 (예: 김철수):", Location = new Point(20, 120), AutoSize = true };
         _txtRegName = new TextBox
         {
-            Location = new Point(20, 155),
-            Size = new Size(440, 25),
+            Location = new Point(20, 144),
+            Size = new Size(456, 26),
             BackColor = Color.FromArgb(15, 23, 42),
             ForeColor = Color.White,
-            BorderStyle = BorderStyle.FixedSingle
+            BorderStyle = BorderStyle.FixedSingle,
+            Font = new Font("맑은 고딕", 9.5f)
         };
 
-        var lblRegPass = new Label { Text = "비밀번호 설정:", Location = new Point(20, 195), AutoSize = true };
+        var lblRegPass = new Label { Text = "비밀번호 설정:", Location = new Point(20, 180), AutoSize = true };
         _txtRegPass = new TextBox
         {
             PasswordChar = '●',
-            Location = new Point(20, 220),
-            Size = new Size(440, 25),
+            Location = new Point(20, 204),
+            Size = new Size(456, 26),
             BackColor = Color.FromArgb(15, 23, 42),
             ForeColor = Color.White,
-            BorderStyle = BorderStyle.FixedSingle
+            BorderStyle = BorderStyle.FixedSingle,
+            Font = new Font("맑은 고딕", 9.5f)
         };
 
         _btnRegister = new Button
         {
-            Text = "신규 작업자 등록 완료",
-            Location = new Point(20, 275),
-            Size = new Size(440, 42),
+            Text = "✔ 신규 작업자 등록 완료",
+            Location = new Point(20, 252),
+            Size = new Size(456, 46),
             BackColor = Color.FromArgb(16, 185, 129),
             ForeColor = Color.White,
             FlatStyle = FlatStyle.Flat,
@@ -392,7 +396,7 @@ public class LoginForm : Form
             return;
         }
 
-        // Launch Modern Workflow Client Form (v1.4.2)
+        // Launch Modern Workflow Client Form (v1.4.3)
         Hide();
         var workerForm = new WorkflowMainForm(_api, session);
         workerForm.FormClosed += (s, e) => Close();

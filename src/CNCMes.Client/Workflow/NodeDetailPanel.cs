@@ -126,7 +126,8 @@ public class NodeDetailPanel : UserControl
     {
         BackColor = Palette.Bg900;
         ForeColor = Palette.TextWhite;
-        Padding = new Padding(12);
+        Padding = new Padding(8);
+        AutoScroll = true; // Never clip controls on any screen resolution!
 
         var mainLayout = new TableLayoutPanel
         {
@@ -137,22 +138,22 @@ public class NodeDetailPanel : UserControl
             Padding = new Padding(0)
         };
         mainLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32f));  // 0: Header (Title & Status)
-        mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24f));  // 1: Work Order & Part Info
-        mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46f));  // 2: Title & Category Row
-        mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46f));  // 3: Machine & Assignee Row
-        mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42f));  // 4: 5 Status Quick Buttons
-        mainLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 35f));   // 5: Details / Memo Box
-        mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32f));  // 6: Next Process Input
-        mainLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 45f));   // 7: Sub-worker Dedicated Section
-        mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38f));  // 8: Action Buttons (Save/Duplicate/Disconnect/Delete)
+        mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30f)); // 0: Header (Title & Status)
+        mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22f)); // 1: Work Order & Part Info
+        mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46f)); // 2: Title & Category Row
+        mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46f)); // 3: Machine & Assignee Row
+        mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36f)); // 4: 5 Status Quick Buttons
+        mainLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 45f));  // 5: Details / Memo Box
+        mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30f)); // 6: Next Process Input
+        mainLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 55f));  // 7: Sub-worker Dedicated Section
+        mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36f)); // 8: Action Buttons (Save/Duplicate/Disconnect/Delete)
 
         // 0: Header
         var pnlHeader = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) };
         _lblHeader = new Label
         {
             Text = "⚙ 선택 노드 상세 정보 실시간 조작",
-            Font = new Font("맑은 고딕", 10f, FontStyle.Bold),
+            Font = new Font("맑은 고딕", 9.8f, FontStyle.Bold),
             ForeColor = Palette.TextWhite,
             Dock = DockStyle.Left,
             AutoSize = true
@@ -179,32 +180,43 @@ public class NodeDetailPanel : UserControl
         };
         mainLayout.Controls.Add(_lblOrderAndPart, 0, 1);
 
-        // 2: Title (DropDown with Classic Presets) & Category
+        // 2: Title (DropDown with Classic Presets) & Category (Pixel-perfect 2-col TableLayout)
         var row2 = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = new Padding(0) };
         row2.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 65f));
         row2.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 35f));
 
-        var pnlTitle = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, Margin = new Padding(0) };
-        pnlTitle.Controls.Add(new Label { Text = "공정명 (클래식 선택 / 직접 입력)", Font = new Font("맑은 고딕", 7.8f, FontStyle.Bold), ForeColor = Palette.TextSlate400, AutoSize = true });
-        
-        // Editable Dropdown for Process Title (Classic Presets + Custom input)
+        var pnlTitle = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(0, 0, 3, 0) };
+        pnlTitle.RowStyles.Add(new RowStyle(SizeType.Absolute, 18f));
+        pnlTitle.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+        pnlTitle.Controls.Add(new Label { Text = "공정명 (선택 / 직접 입력)", Font = new Font("맑은 고딕", 7.8f, FontStyle.Bold), ForeColor = Palette.TextSlate400, Dock = DockStyle.Fill }, 0, 0);
+
         _cboTitle = new ComboBox
         {
-            Width = 205,
+            Dock = DockStyle.Fill,
             DropDownStyle = ComboBoxStyle.DropDown,
             BackColor = Palette.Bg850,
             ForeColor = Color.White,
-            Font = new Font("맑은 고딕", 9.2f),
+            Font = new Font("맑은 고딕", 9f),
             AutoCompleteMode = AutoCompleteMode.SuggestAppend,
             AutoCompleteSource = AutoCompleteSource.ListItems
         };
         _cboTitle.TextChanged += (s, e) => SaveChangesToNode();
         _cboTitle.SelectedIndexChanged += (s, e) => SaveChangesToNode();
-        pnlTitle.Controls.Add(_cboTitle);
+        pnlTitle.Controls.Add(_cboTitle, 0, 1);
 
-        var pnlCat = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, Margin = new Padding(0) };
-        pnlCat.Controls.Add(new Label { Text = "공정분류", Font = new Font("맑은 고딕", 7.8f, FontStyle.Bold), ForeColor = Palette.TextSlate400, AutoSize = true });
-        _cboCategory = new ComboBox { Width = 115, DropDownStyle = ComboBoxStyle.DropDownList, BackColor = Palette.Bg850, ForeColor = Color.White };
+        var pnlCat = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(3, 0, 0, 0) };
+        pnlCat.RowStyles.Add(new RowStyle(SizeType.Absolute, 18f));
+        pnlCat.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+        pnlCat.Controls.Add(new Label { Text = "공정분류", Font = new Font("맑은 고딕", 7.8f, FontStyle.Bold), ForeColor = Palette.TextSlate400, Dock = DockStyle.Fill }, 0, 0);
+
+        _cboCategory = new ComboBox
+        {
+            Dock = DockStyle.Fill,
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            BackColor = Palette.Bg850,
+            ForeColor = Color.White,
+            Font = new Font("맑은 고딕", 9f)
+        };
         _cboCategory.Items.AddRange(new object[] { "준비", "가공", "검사", "후공정", "협업", "이슈" });
         _cboCategory.SelectedIndexChanged += (s, e) =>
         {
@@ -215,29 +227,49 @@ public class NodeDetailPanel : UserControl
                 SaveChangesToNode();
             }
         };
-        pnlCat.Controls.Add(_cboCategory);
+        pnlCat.Controls.Add(_cboCategory, 0, 1);
 
         row2.Controls.Add(pnlTitle, 0, 0);
         row2.Controls.Add(pnlCat, 1, 0);
         mainLayout.Controls.Add(row2, 0, 2);
 
-        // 3: Machine & Assignee
+        // 3: Machine & Assignee (Pixel-perfect 2-col TableLayout 50/50)
         var row3 = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = new Padding(0) };
         row3.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
         row3.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
 
-        var pnlMach = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, Margin = new Padding(0) };
-        pnlMach.Controls.Add(new Label { Text = "담당 설비 (장비)", Font = new Font("맑은 고딕", 7.8f, FontStyle.Bold), ForeColor = Palette.TextSlate400, AutoSize = true });
-        _cboMachine = new ComboBox { Width = 150, DropDownStyle = ComboBoxStyle.DropDownList, BackColor = Palette.Bg850, ForeColor = Color.White };
+        var pnlMach = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(0, 0, 3, 0) };
+        pnlMach.RowStyles.Add(new RowStyle(SizeType.Absolute, 18f));
+        pnlMach.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+        pnlMach.Controls.Add(new Label { Text = "담당 설비 (장비)", Font = new Font("맑은 고딕", 7.8f, FontStyle.Bold), ForeColor = Palette.TextSlate400, Dock = DockStyle.Fill }, 0, 0);
+
+        _cboMachine = new ComboBox
+        {
+            Dock = DockStyle.Fill,
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            BackColor = Palette.Bg850,
+            ForeColor = Color.White,
+            Font = new Font("맑은 고딕", 9f)
+        };
         _cboMachine.Items.AddRange(new object[] { "R01", "R02", "R03", "R04", "R05", "K01", "K02", "세척기", "측정실", "포장팀" });
         _cboMachine.SelectedIndexChanged += (s, e) => SaveChangesToNode();
-        pnlMach.Controls.Add(_cboMachine);
+        pnlMach.Controls.Add(_cboMachine, 0, 1);
 
-        var pnlAss = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, Margin = new Padding(0) };
-        pnlAss.Controls.Add(new Label { Text = "담당 작업자", Font = new Font("맑은 고딕", 7.8f, FontStyle.Bold), ForeColor = Palette.TextSlate400, AutoSize = true });
-        _txtAssignee = new TextBox { Width = 150, BackColor = Palette.Bg850, ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle };
+        var pnlAss = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(3, 0, 0, 0) };
+        pnlAss.RowStyles.Add(new RowStyle(SizeType.Absolute, 18f));
+        pnlAss.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+        pnlAss.Controls.Add(new Label { Text = "담당 작업자", Font = new Font("맑은 고딕", 7.8f, FontStyle.Bold), ForeColor = Palette.TextSlate400, Dock = DockStyle.Fill }, 0, 0);
+
+        _txtAssignee = new TextBox
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Palette.Bg850,
+            ForeColor = Color.White,
+            BorderStyle = BorderStyle.FixedSingle,
+            Font = new Font("맑은 고딕", 9f)
+        };
         _txtAssignee.TextChanged += (s, e) => SaveChangesToNode();
-        pnlAss.Controls.Add(_txtAssignee);
+        pnlAss.Controls.Add(_txtAssignee, 0, 1);
 
         row3.Controls.Add(pnlMach, 0, 0);
         row3.Controls.Add(pnlAss, 1, 0);
@@ -288,11 +320,13 @@ public class NodeDetailPanel : UserControl
         mainLayout.Controls.Add(pnlDetails, 0, 5);
 
         // 6: Next Process Input
-        var pnlNext = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Margin = new Padding(0, 3, 0, 3) };
-        pnlNext.Controls.Add(new Label { Text = "다음 예정 작업:", Font = new Font("맑은 고딕", 7.8f, FontStyle.Bold), ForeColor = Palette.TextSlate400, AutoSize = true, Margin = new Padding(0, 5, 4, 0) });
-        _txtNextProcess = new TextBox { Width = 220, BackColor = Palette.Bg850, ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle };
+        var pnlNext = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = new Padding(0, 2, 0, 2) };
+        pnlNext.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 95f));
+        pnlNext.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        pnlNext.Controls.Add(new Label { Text = "다음 예정 작업:", Font = new Font("맑은 고딕", 7.8f, FontStyle.Bold), ForeColor = Palette.TextSlate400, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 0);
+        _txtNextProcess = new TextBox { Dock = DockStyle.Fill, BackColor = Palette.Bg850, ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle, Font = new Font("맑은 고딕", 8.8f) };
         _txtNextProcess.TextChanged += (s, e) => SaveChangesToNode();
-        pnlNext.Controls.Add(_txtNextProcess);
+        pnlNext.Controls.Add(_txtNextProcess, 1, 0);
         mainLayout.Controls.Add(pnlNext, 0, 6);
 
         // 7: Sub-worker Dedicated Section
@@ -306,11 +340,13 @@ public class NodeDetailPanel : UserControl
         pnlSubBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 26f));
         pnlSubBody.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
-        var pnlSubNameRow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Margin = new Padding(0) };
-        pnlSubNameRow.Controls.Add(new Label { Text = "서브인원:", Font = new Font("맑은 고딕", 7.8f), ForeColor = Palette.TextSlate400, AutoSize = true, Margin = new Padding(0, 3, 4, 0) });
-        _txtSubWorker = new TextBox { Width = 110, BackColor = Palette.Bg850, ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle, Text = "이서브" };
+        var pnlSubNameRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = new Padding(0) };
+        pnlSubNameRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 65f));
+        pnlSubNameRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        pnlSubNameRow.Controls.Add(new Label { Text = "서브인원:", Font = new Font("맑은 고딕", 7.8f), ForeColor = Palette.TextSlate400, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 0);
+        _txtSubWorker = new TextBox { Dock = DockStyle.Fill, BackColor = Palette.Bg850, ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle, Text = "이서브", Font = new Font("맑은 고딕", 8.8f) };
         _txtSubWorker.TextChanged += (s, e) => SaveChangesToNode();
-        pnlSubNameRow.Controls.Add(_txtSubWorker);
+        pnlSubNameRow.Controls.Add(_txtSubWorker, 1, 0);
 
         _txtSubInstruction = new TextBox
         {
@@ -339,10 +375,10 @@ public class NodeDetailPanel : UserControl
 
         // 8: Action Buttons (Save / Duplicate / Disconnect / Delete)
         var row8 = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, Margin = new Padding(0, 3, 0, 0) };
-        row8.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 26f)); // Save
-        row8.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 26f)); // Duplicate
-        row8.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 24f)); // Disconnect
-        row8.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 24f)); // Delete
+        row8.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25f)); // Save
+        row8.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25f)); // Duplicate
+        row8.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25f)); // Disconnect
+        row8.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25f)); // Delete
 
         _btnSaveDetails = CreateFlatButton("💾 저장", Palette.Bg800, Color.White);
         _btnSaveDetails.Click += (s, e) =>

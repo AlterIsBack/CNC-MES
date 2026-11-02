@@ -104,7 +104,7 @@ public class WorkflowMainForm : Form
 
     private void InitializeUI()
     {
-        Text = $"CNC-MES 스마트 현장 터미널 v1.4.2 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
+        Text = $"CNC-MES 스마트 현장 터미널 v1.4.3 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
         Size = new Size(1600, 960);
         MinimumSize = new Size(1280, 720);
         StartPosition = FormStartPosition.CenterScreen;
@@ -137,9 +137,9 @@ public class WorkflowMainForm : Form
             Margin = new Padding(0),
             BackColor = Palette.Bg950
         };
-        mainContainer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 310f)); // Left Sidebar
+        mainContainer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 330f)); // Left Sidebar
         mainContainer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));  // Center Workspace
-        mainContainer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 365f)); // Right Sidebar
+        mainContainer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 390f)); // Right Sidebar
         mainContainer.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
         mainContainer.Controls.Add(BuildLeftSidebar(), 0, 0);
@@ -212,7 +212,7 @@ public class WorkflowMainForm : Form
         pnlBrand.Controls.Add(pnlIcon);
 
         var lblBrand = new Label { Text = "CNC-MES", Location = new Point(44, 8), Font = new Font("맑은 고딕", 12f, FontStyle.Bold), ForeColor = Color.White, AutoSize = true };
-        var lblVer = new Label { Text = "v1.4.2 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
+        var lblVer = new Label { Text = "v1.4.3 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
         var lblStatus = new Label { Text = "● 서버 정상", Location = new Point(245, 11), Font = new Font("맑은 고딕", 8f, FontStyle.Bold), ForeColor = Palette.Green, BackColor = Color.FromArgb(80, 6, 78, 59), AutoSize = true, Padding = new Padding(5, 1, 5, 1) };
         var lblSub = new Label { Text = "WORKFLOW-BASED OPERATOR CONTROL SYSTEM", Location = new Point(45, 30), Font = new Font("Consolas", 7.2f), ForeColor = Palette.TextSlate400, AutoSize = true };
         pnlBrand.Controls.AddRange(new Control[] { lblBrand, lblVer, lblStatus, lblSub });
@@ -374,7 +374,7 @@ public class WorkflowMainForm : Form
             Padding = new Padding(0)
         };
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 175f)); // Card 1: 6 Action Buttons (2x3 grid, clean spacing)
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 185f)); // Card 1: 6 Action Buttons (2x3 grid, clean spacing)
         panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));  // Card 2: Orders & Parts List (Full remaining height)
 
         // Card 1: Workflow Menu Buttons (6 Action Buttons per spec)
@@ -384,37 +384,37 @@ public class WorkflowMainForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 2,
             RowCount = 3,
-            Margin = new Padding(2),
-            Padding = new Padding(2)
+            Margin = new Padding(0),
+            Padding = new Padding(1)
         };
         menuGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
         menuGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
-        menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 33.3f));
-        menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 33.3f));
-        menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 33.3f));
+        menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 33.33f));
+        menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 33.33f));
+        menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 33.34f));
 
         var btnGenDefault = CreateFlatButton("⚡ 기본 워크플로우", Palette.Bg800, Palette.AccentSky);
-        btnGenDefault.Font = new Font("맑은 고딕", 8.3f, FontStyle.Bold);
+        btnGenDefault.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
         btnGenDefault.Click += (s, e) => GenerateStandardWorkflowForSelectedPart(confirmIfNotEmpty: false);
 
-        var btnSaveDraft = CreateFlatButton("💾 로컬 임시저장", Palette.Bg800, Color.FromArgb(52, 211, 153));
-        btnSaveDraft.Font = new Font("맑은 고딕", 8.3f, FontStyle.Bold);
+        var btnSaveDraft = CreateFlatButton("💾 임시저장", Palette.Bg800, Color.FromArgb(52, 211, 153));
+        btnSaveDraft.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
         btnSaveDraft.Click += (s, e) => SaveWorkflowDraftLocally();
 
         _btnConfirmPlan = CreateFlatButton("🔒 계획 확정", Color.FromArgb(8, 47, 73), Palette.AccentSky);
-        _btnConfirmPlan.Font = new Font("맑은 고딕", 8.3f, FontStyle.Bold);
+        _btnConfirmPlan.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
         _btnConfirmPlan.Click += async (s, e) => await ConfirmAndShareWorkflowAsync();
 
         var btnExecuteSelected = CreateFlatButton("▶ 선택작업 실행", Color.FromArgb(5, 150, 105), Color.White);
-        btnExecuteSelected.Font = new Font("맑은 고딕", 8.3f, FontStyle.Bold);
+        btnExecuteSelected.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
         btnExecuteSelected.Click += async (s, e) => await ExecuteSelectedWorkflowNodeAsync();
 
-        var btnAutoLayout = CreateFlatButton("⟲ 워크플로우 정렬", Palette.Bg800, Palette.Green);
-        btnAutoLayout.Font = new Font("맑은 고딕", 8.3f, FontStyle.Bold);
+        var btnAutoLayout = CreateFlatButton("⟲ 공정 자동정렬", Palette.Bg800, Palette.Green);
+        btnAutoLayout.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
         btnAutoLayout.Click += (s, e) => _canvas.AutoLayout();
 
         var btnClearPlan = CreateFlatButton("🗑 전체 초기화", Palette.Bg800, Palette.Rose);
-        btnClearPlan.Font = new Font("맑은 고딕", 8.3f, FontStyle.Bold);
+        btnClearPlan.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
         btnClearPlan.Click += (s, e) =>
         {
             if (MessageBox.Show("현재 캔버스의 모든 노드와 연결선을 초기화하시겠습니까?", "초기화 확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
@@ -432,6 +432,7 @@ public class WorkflowMainForm : Form
         menuGrid.Controls.Add(btnAutoLayout, 0, 2);
         menuGrid.Controls.Add(btnClearPlan, 1, 2);
         cardMenu.Controls.Add(menuGrid);
+        menuGrid.SendToBack(); // Critical for WinForms dock ordering!
         panel.Controls.Add(cardMenu, 0, 0);
 
         // Card 2: Work Orders & Parts List
@@ -441,8 +442,8 @@ public class WorkflowMainForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 1,
             RowCount = 2,
-            Margin = new Padding(2),
-            Padding = new Padding(2)
+            Margin = new Padding(0),
+            Padding = new Padding(1)
         };
         pnlOrderBody.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
         pnlOrderBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 30f)); // Order combo
@@ -457,6 +458,7 @@ public class WorkflowMainForm : Form
         pnlOrderBody.Controls.Add(_lstParts, 0, 1);
 
         cardOrders.Controls.Add(pnlOrderBody);
+        pnlOrderBody.SendToBack(); // Critical for WinForms dock ordering!
         panel.Controls.Add(cardOrders, 0, 1);
 
         return panel;
@@ -690,16 +692,15 @@ public class WorkflowMainForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 3,
+            RowCount = 2,
             Margin = new Padding(6, 0, 0, 0),
             Padding = new Padding(0)
         };
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));  // 9: Node Details Panel
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 155f)); // 6: Notices
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 220f)); // 7: Realtime Chat
+        panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));  // Node Details Panel (Fills maximum height!)
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 210f)); // Compact Tabbed Communication (Notices + Chat)
 
-        // 9: Node Details Panel
+        // 1: Node Details Panel
         _detailPanel = new NodeDetailPanel { Dock = DockStyle.Fill };
         _detailPanel.StatusChangeRequested += async (node, newStatus) => await HandleNodeStatusChangeAsync(node, newStatus);
         _detailPanel.BatchStatusChangeRequested += async (nodes, newStatus) =>
@@ -761,28 +762,41 @@ public class WorkflowMainForm : Form
         _detailPanel.SubWorkerTaskSendRequested += async (node, subWorker, instruction) => await SendSubWorkerTaskAsync(node, subWorker, instruction);
         panel.Controls.Add(_detailPanel, 0, 0);
 
-        // 6: Notices Card
-        var cardNotice = CreateCard("📢 공지사항 및 작업지시서 알림");
-        var pnlNoticeHeader = new Panel { Dock = DockStyle.Top, Height = 24 };
+        // 2: Tabbed Communication Card (Notices & Live Chat)
+        var cardComms = CreateCard("📡 현장 알림 및 실시간 소통");
+        var commTabs = new TabControl
+        {
+            Dock = DockStyle.Fill,
+            Font = new Font("맑은 고딕", 8.8f, FontStyle.Bold)
+        };
+
+        // Tab 1: Notices
+        var tabNotice = new TabPage(" 📢 공지사항 및 작지 알림 ") { BackColor = Palette.Bg900 };
+        var pnlNoticeBody = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(0) };
+        pnlNoticeBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 26f));
+        pnlNoticeBody.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+        var pnlNoticeHeader = new Panel { Dock = DockStyle.Fill };
         _lblNoticeBadge = new Label { Text = "0건 미확인", Dock = DockStyle.Right, AutoSize = true, ForeColor = Palette.Amber, Font = new Font("맑은 고딕", 7.8f, FontStyle.Bold) };
         var btnOpenNotices = CreateFlatButton("목록 상세열기", Palette.Bg800, Palette.AccentSky, 90, 20);
         btnOpenNotices.Dock = DockStyle.Left;
         btnOpenNotices.Click += async (s, e) => await ShowNoticesDialogAsync();
         pnlNoticeHeader.Controls.AddRange(new Control[] { btnOpenNotices, _lblNoticeBadge });
 
-        _lstNotices = new ListBox { Dock = DockStyle.Fill, BackColor = Palette.Bg850, ForeColor = Palette.TextSlate300, BorderStyle = BorderStyle.FixedSingle, Font = new Font("맑은 고딕", 8.2f) };
+        _lstNotices = new ListBox { Dock = DockStyle.Fill, BackColor = Palette.Bg850, ForeColor = Palette.TextSlate300, BorderStyle = BorderStyle.None, Font = new Font("맑은 고딕", 8.2f) };
         _lstNotices.DoubleClick += async (s, e) => await ShowNoticesDialogAsync();
 
-        cardNotice.Controls.Add(_lstNotices);
-        cardNotice.Controls.Add(pnlNoticeHeader);
-        panel.Controls.Add(cardNotice, 0, 1);
+        pnlNoticeBody.Controls.Add(pnlNoticeHeader, 0, 0);
+        pnlNoticeBody.Controls.Add(_lstNotices, 0, 1);
+        tabNotice.Controls.Add(pnlNoticeBody);
+        commTabs.TabPages.Add(tabNotice);
 
-        // 7: Realtime Chat Card
-        var cardChat = CreateCard("💬 현장 실시간 소통 채팅");
+        // Tab 2: Realtime Chat
+        var tabChat = new TabPage(" 💬 현장 실시간 채팅 ") { BackColor = Palette.Bg900 };
         var pnlChatBody = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Margin = new Padding(0) };
         pnlChatBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 26f)); // Channel selector
         pnlChatBody.RowStyles.Add(new RowStyle(SizeType.Percent, 100f)); // Chat messages
-        pnlChatBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 32f)); // Chat input
+        pnlChatBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 30f)); // Chat input
 
         _cboChatChannel = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList, BackColor = Palette.Bg850, ForeColor = Color.White, Font = new Font("맑은 고딕", 8.2f) };
         _cboChatChannel.Items.AddRange(new object[] { "🌐 전체 공통 채널", "⚙ R01 작업 채널", "⚙ R02 작업 채널", "🚨 품질/이슈 채널" });
@@ -790,7 +804,7 @@ public class WorkflowMainForm : Form
         _cboChatChannel.SelectedIndexChanged += async (s, e) => await LoadChatAsync();
         pnlChatBody.Controls.Add(_cboChatChannel, 0, 0);
 
-        _lstChat = new ListBox { Dock = DockStyle.Fill, BackColor = Palette.Bg850, ForeColor = Palette.TextWhite, BorderStyle = BorderStyle.FixedSingle, Font = new Font("맑은 고딕", 8.2f) };
+        _lstChat = new ListBox { Dock = DockStyle.Fill, BackColor = Palette.Bg850, ForeColor = Palette.TextWhite, BorderStyle = BorderStyle.None, Font = new Font("맑은 고딕", 8.2f) };
         pnlChatBody.Controls.Add(_lstChat, 0, 1);
 
         var pnlChatSend = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = new Padding(0) };
@@ -807,15 +821,16 @@ public class WorkflowMainForm : Form
         pnlChatSend.Controls.Add(_btnSendChat, 1, 0);
         pnlChatBody.Controls.Add(pnlChatSend, 0, 2);
 
-        cardChat.Controls.Add(pnlChatBody);
-        panel.Controls.Add(cardChat, 0, 2);
+        tabChat.Controls.Add(pnlChatBody);
+        commTabs.TabPages.Add(tabChat);
+
+        cardComms.Controls.Add(commTabs);
+        commTabs.SendToBack(); // Critical for WinForms dock ordering!
+        panel.Controls.Add(cardComms, 0, 1);
 
         return panel;
     }
 
-    // =========================================================================
-    // REAL-TIME DATA LOADERS & SYNC
-    // =========================================================================
     private async Task PollRealtimeDataAsync()
     {
         try
@@ -1850,7 +1865,7 @@ public class WorkflowMainForm : Form
         {
             Dock = DockStyle.Fill,
             BackColor = Palette.Bg900,
-            Padding = new Padding(8),
+            Padding = new Padding(6),
             Margin = new Padding(0, 0, 0, 6)
         };
         pnl.Paint += (s, e) =>
@@ -1865,7 +1880,9 @@ public class WorkflowMainForm : Form
             Font = new Font("맑은 고딕", 8.8f, FontStyle.Bold),
             ForeColor = Palette.TextWhite,
             Dock = DockStyle.Top,
-            Height = 22
+            Height = 24,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Padding = new Padding(4, 0, 0, 2)
         };
         pnl.Controls.Add(lblHeader);
         return pnl;

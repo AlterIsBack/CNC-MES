@@ -22,8 +22,9 @@ public class AuthController : ControllerBase
     {
         return Ok(new
         {
-            initialized = _db.HasAnyUser(),
-            systemVersion = "v1.2.2",
+            initialized = _db.HasAdminUser(),
+            hasAnyUser = _db.HasAnyUser(),
+            systemVersion = "v1.4.3",
             serverTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
         });
     }
@@ -93,9 +94,9 @@ public class AuthController : ControllerBase
     [HttpPost("setup-admin")]
     public IActionResult SetupAdmin([FromBody] CreateUserRequest req)
     {
-        if (_db.HasAnyUser())
+        if (_db.HasAdminUser())
         {
-            return BadRequest(new { message = "이미 시스템 계정이 존재합니다." });
+            return BadRequest(new { message = "이미 시스템 관리자(ADMIN) 계정이 등록되어 있습니다. 아이디: admin / 비밀번호: admin1234 로 로그인해주세요." });
         }
 
         if (string.IsNullOrWhiteSpace(req.Username) || string.IsNullOrWhiteSpace(req.Password))

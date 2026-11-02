@@ -391,6 +391,13 @@ public class SqliteDb
         // 최초 DB 생성 시에만 7대 CNC 장비 기본 시딩 (이후 사용자가 추가/삭제한 장비 목록 유지)
         SeedMachines(conn);
 
+        // 최초 구동 또는 관리자 미존재 시 기본 마스터 관리자(admin / admin1234) 자동 시딩
+        if (!HasAdminUser())
+        {
+            CreateUser("admin", "admin1234", "시스템 총괄관리자", "ADMIN");
+            _logger.LogInformation("기본 ADMIN 마스터 계정(admin / admin1234)이 자동 생성되었습니다.");
+        }
+
         _logger.LogInformation("CNC MES SQLite Database initialized successfully.");
     }
 
@@ -437,6 +444,14 @@ public class SqliteDb
         using var conn = CreateConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT COUNT(1) FROM users;";
+        return Convert.ToInt32(cmd.ExecuteScalar()) > 0;
+    }
+
+    public bool HasAdminUser()
+    {
+        using var conn = CreateConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(1) FROM users WHERE role = 'ADMIN';";
         return Convert.ToInt32(cmd.ExecuteScalar()) > 0;
     }
 
