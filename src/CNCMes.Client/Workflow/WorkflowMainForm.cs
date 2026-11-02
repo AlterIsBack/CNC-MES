@@ -107,7 +107,7 @@ public class WorkflowMainForm : Form
 
     private void InitializeUI()
     {
-        Text = $"CNC-MES 스마트 현장 터미널 v1.4.5 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
+        Text = $"CNC-MES 스마트 현장 터미널 v1.4.6 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
         Size = new Size(1600, 960);
         MinimumSize = new Size(1280, 720);
         StartPosition = FormStartPosition.CenterScreen;
@@ -216,7 +216,7 @@ public class WorkflowMainForm : Form
         pnlBrand.Controls.Add(pnlIcon);
 
         var lblBrand = new Label { Text = "CNC-MES", Location = new Point(44, 8), Font = new Font("맑은 고딕", 12f, FontStyle.Bold), ForeColor = Color.White, AutoSize = true };
-        var lblVer = new Label { Text = "v1.4.5 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
+        var lblVer = new Label { Text = "v1.4.6 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
         var lblStatus = new Label { Text = "● 서버 정상", Location = new Point(245, 11), Font = new Font("맑은 고딕", 8f, FontStyle.Bold), ForeColor = Palette.Green, BackColor = Color.FromArgb(80, 6, 78, 59), AutoSize = true, Padding = new Padding(5, 1, 5, 1) };
         var lblSub = new Label { Text = "WORKFLOW-BASED OPERATOR CONTROL SYSTEM", Location = new Point(45, 30), Font = new Font("Consolas", 7.2f), ForeColor = Palette.TextSlate400, AutoSize = true };
         pnlBrand.Controls.AddRange(new Control[] { lblBrand, lblVer, lblStatus, lblSub });
@@ -389,31 +389,32 @@ public class WorkflowMainForm : Form
             Padding = new Padding(0)
         };
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 235f)); // Card 1: 6 Action Buttons (Height 235px, plenty of vertical room)
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 275f)); // Card 1: 8 Action Buttons (Height 275px, 4 rows)
         panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));  // Card 2: Orders & Parts List (Full remaining height)
 
-        // Card 1: Workflow Menu Buttons (6 Action Buttons per spec)
+        // Card 1: Workflow Menu Buttons (8 Action Buttons per spec)
         var menuGrid = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 3,
+            RowCount = 4,
             Margin = new Padding(2, 6, 2, 2),
             Padding = new Padding(1)
         };
         menuGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
         menuGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
-        menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 33.33f));
-        menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 33.33f));
-        menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 33.34f));
+        menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 25f));
+        menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 25f));
+        menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 25f));
+        menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 25f));
 
         var btnGenDefault = CreateFlatButton("⚡ 기본 워크플로우", Palette.Bg800, Palette.AccentSky);
         btnGenDefault.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
         btnGenDefault.Click += (s, e) => GenerateStandardWorkflowForSelectedPart(confirmIfNotEmpty: false);
 
-        var btnSaveDraft = CreateFlatButton("💾 임시저장", Palette.Bg800, Color.FromArgb(52, 211, 153));
-        btnSaveDraft.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
-        btnSaveDraft.Click += (s, e) => SaveWorkflowDraftLocally();
+        var btnProbecard = CreateFlatButton("🎯 프로브카드 템플릿", Palette.Bg800, Color.FromArgb(245, 158, 11));
+        btnProbecard.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
+        btnProbecard.Click += (s, e) => ApplyProbecardTemplate();
 
         _btnConfirmPlan = CreateFlatButton("🔒 계획 확정", Color.FromArgb(8, 47, 73), Palette.AccentSky);
         _btnConfirmPlan.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
@@ -426,6 +427,14 @@ public class WorkflowMainForm : Form
         var btnAutoLayout = CreateFlatButton("⟲ 공정 자동정렬", Palette.Bg800, Palette.Green);
         btnAutoLayout.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
         btnAutoLayout.Click += (s, e) => _canvas.AutoLayout();
+
+        var btnTimeline = CreateFlatButton("⏱ 타임라인 정렬", Palette.Bg800, Color.FromArgb(14, 165, 233));
+        btnTimeline.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
+        btnTimeline.Click += (s, e) => _canvas.ArrangeByTimeline();
+
+        var btnSaveDraft = CreateFlatButton("💾 임시저장", Palette.Bg800, Color.FromArgb(52, 211, 153));
+        btnSaveDraft.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
+        btnSaveDraft.Click += (s, e) => SaveWorkflowDraftLocally();
 
         var btnClearPlan = CreateFlatButton("🗑 전체 초기화", Palette.Bg800, Palette.Rose);
         btnClearPlan.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
@@ -440,11 +449,13 @@ public class WorkflowMainForm : Form
         };
 
         menuGrid.Controls.Add(btnGenDefault, 0, 0);
-        menuGrid.Controls.Add(btnSaveDraft, 1, 0);
+        menuGrid.Controls.Add(btnProbecard, 1, 0);
         menuGrid.Controls.Add(_btnConfirmPlan, 0, 1);
         menuGrid.Controls.Add(btnExecuteSelected, 1, 1);
         menuGrid.Controls.Add(btnAutoLayout, 0, 2);
-        menuGrid.Controls.Add(btnClearPlan, 1, 2);
+        menuGrid.Controls.Add(btnTimeline, 1, 2);
+        menuGrid.Controls.Add(btnSaveDraft, 0, 3);
+        menuGrid.Controls.Add(btnClearPlan, 1, 3);
         var cardMenu = CreateCard("📋 워크플로우 제어 메뉴", menuGrid);
         panel.Controls.Add(cardMenu, 0, 0);
 
@@ -467,6 +478,7 @@ public class WorkflowMainForm : Form
 
         _lstParts = new ListBox { Dock = DockStyle.Fill, BackColor = Palette.Bg850, ForeColor = Palette.TextWhite, BorderStyle = BorderStyle.FixedSingle, Font = new Font("맑은 고딕", 9f) };
         _lstParts.SelectedIndexChanged += (s, e) => OnPartSelected();
+        _lstParts.DoubleClick += (s, e) => OnPartDoubleClicked();
         pnlOrderBody.Controls.Add(_lstParts, 0, 1);
 
         var cardOrders = CreateCard("📦 작업지시서 및 대상 부품 목록", pnlOrderBody);
@@ -544,6 +556,9 @@ public class WorkflowMainForm : Form
         var btnSelectAll = CreateFlatButton("🔲 전체선택", Palette.Bg800, Palette.TextSlate300, 80, 28);
         btnSelectAll.Click += (s, e) => _canvas.SelectAllNodes();
 
+        var btnTimelineTop = CreateFlatButton("⏱ 타임라인 정렬", Palette.Bg800, Color.FromArgb(14, 165, 233), 110, 28);
+        btnTimelineTop.Click += (s, e) => _canvas.ArrangeByTimeline();
+
         // Bottom History Toggle Button
         _btnToggleBottom = CreateFlatButton("🔽 하단창 숨기기", Palette.Bg800, Palette.AccentSky, 140, 28);
         _btnToggleBottom.Click += (s, e) => SetBottomPanelCollapsed(!_centerVerticalSplitter.Panel2Collapsed);
@@ -551,7 +566,7 @@ public class WorkflowMainForm : Form
         canvasToolbar.Controls.AddRange(new Control[]
         {
             btnAddPrep, btnAddMach, btnAddInsp, btnAddCollab, btnAddPost, btnAddIssue,
-            divTool, btnZoomReset, btnSelectAll, _btnToggleBottom
+            divTool, btnTimelineTop, btnZoomReset, btnSelectAll, _btnToggleBottom
         });
 
         // Canvas Control
@@ -561,6 +576,10 @@ public class WorkflowMainForm : Form
         {
             if (_canvas.SelectedNodes.Count <= 1)
                 _detailPanel.BindNode(node);
+        };
+        _canvas.NodeDoubleClicked += (node) =>
+        {
+            _detailPanel.BindNode(node);
         };
         _canvas.WorkflowChanged += () =>
         {
@@ -994,6 +1013,12 @@ public class WorkflowMainForm : Form
             }
         }
         catch { }
+
+        // If no orders returned or offline, populate default demo work orders including 프로브카드
+        if (_cboOrders.Items.Count == 0)
+        {
+            PopulateFallbackOrders();
+        }
     }
 
     private async Task OnOrderSelectedAsync()
@@ -1120,6 +1145,293 @@ public class WorkflowMainForm : Form
     // =========================================================================
     // WORKFLOW GENERATION, DRAFT SAVING & CONFIRMATION
     // =========================================================================
+
+    private void OnPartDoubleClicked()
+    {
+        if (_lstParts.SelectedIndex < 0) return;
+        string partText = _lstParts.SelectedItem?.ToString() ?? "";
+        ApplyProbecardTemplate(partText);
+    }
+
+    /// <summary>
+    /// 프로브카드 전용 9단계 표준 공정 템플릿 생성 및 세부지시 커스텀 필드 / 타임라인 정렬 적용
+    /// (준비작업, 소재작업, 베이스판교체, 1차황삭, 1차중간측정, 2차피치정삭, 챔퍼/버제거, 최종검사, 세척포장)
+    /// </summary>
+    public void ApplyProbecardTemplate(string? rawPartName = null)
+    {
+        string orderNo = "WO-2026-001";
+        int orderId = 1;
+        if (_cboOrders.SelectedIndex >= 0 && _cboOrders.SelectedIndex < _cachedOrders.Count)
+        {
+            var o = _cachedOrders[_cboOrders.SelectedIndex];
+            orderNo = o.GetProperty("orderNumber").GetString() ?? "WO-2026-001";
+            if (o.TryGetProperty("orderId", out var oid)) orderId = oid.GetInt32();
+        }
+
+        string pName = string.IsNullOrWhiteSpace(rawPartName) ? "프로브카드 인터포저 (PEEK 5T)" : rawPartName;
+        if (pName.StartsWith("[") && pName.Contains("]"))
+        {
+            int closeIdx = pName.IndexOf(']');
+            pName = pName.Substring(closeIdx + 1).Trim();
+        }
+        if (pName.Contains("—"))
+        {
+            pName = pName.Split('—')[0].Trim();
+        }
+
+        _canvas.Clear();
+        ResetWorkflowConfirmation();
+
+        // 9단계 프로브카드 표준 공정 노드 생성 (각 단계별 시작/종료시간, 소재사이즈, 소재종류 기본 탑재)
+        var n1 = new WorkflowNode
+        {
+            OrderId = orderId,
+            OrderNumber = orderNo,
+            PartName = pName,
+            Title = "준비작업 (도면 & NC 확인)",
+            Category = NodeCategory.Preparation,
+            Status = NodeStatus.Ready,
+            MachineId = "R01",
+            Assignee = _session.DisplayName,
+            StartTime = "08:30",
+            EndTime = "09:00",
+            MaterialSize = "150x120x5T",
+            MaterialType = "PEEK 5T",
+            Details = "[시작시간]: 08:30\r\n[종료시간]: 09:00\r\n[소재사이즈]: 150x120x5T\r\n[소재종류]: PEEK 5T\r\n- 프로브카드 도면(DWG) 치수 및 마이크로 피치 공차(±0.003) 확인\r\n- 가공 NC 프로그램 로드 및 툴 시트(Tool Sheet) 점검",
+            X = 60,
+            Y = 80
+        };
+
+        var n2 = new WorkflowNode
+        {
+            OrderId = orderId,
+            OrderNumber = orderNo,
+            PartName = pName,
+            Title = "소재작업 (치수 & 평면도 검수)",
+            Category = NodeCategory.Preparation,
+            Status = NodeStatus.Ready,
+            MachineId = "R01",
+            Assignee = _session.DisplayName,
+            StartTime = "09:00",
+            EndTime = "09:30",
+            MaterialSize = "150x120x5T",
+            MaterialType = "PEEK 5T",
+            Details = "[시작시간]: 09:00\r\n[종료시간]: 09:30\r\n[소재사이즈]: 150x120x5T\r\n[소재종류]: PEEK 5T\r\n- PEEK 소재 5T 정밀 평면도 측정 및 버(Burr) 사전 제거\r\n- 마이크로미터 두께 실측 검사 (5.000 ±0.005mm)",
+            X = 300,
+            Y = 80
+        };
+
+        var n3 = new WorkflowNode
+        {
+            OrderId = orderId,
+            OrderNumber = orderNo,
+            PartName = pName,
+            Title = "베이스판 교체 & 원점 세팅",
+            Category = NodeCategory.Preparation,
+            Status = NodeStatus.Ready,
+            MachineId = "R01",
+            Assignee = _session.DisplayName,
+            StartTime = "09:30",
+            EndTime = "10:10",
+            MaterialSize = "150x120x5T",
+            MaterialType = "PEEK 5T",
+            Details = "[시작시간]: 09:30\r\n[종료시간]: 10:10\r\n[소재사이즈]: 150x120x5T\r\n[소재종류]: PEEK 5T\r\n- 전용 진공 흡착 베이스판 교체 장착 및 수평 레벨링 다이얼게이지 세팅\r\n- 공작물 원점(G54) 터치 프로브 정밀 셋업",
+            X = 540,
+            Y = 80
+        };
+
+        var n4 = new WorkflowNode
+        {
+            OrderId = orderId,
+            OrderNumber = orderNo,
+            PartName = pName,
+            Title = "1차 전면 황삭 (면가공)",
+            Category = NodeCategory.Machining,
+            Status = NodeStatus.Ready,
+            MachineId = "R01",
+            Assignee = _session.DisplayName,
+            StartTime = "10:10",
+            EndTime = "11:20",
+            MaterialSize = "150x120x5T",
+            MaterialType = "PEEK 5T",
+            Details = "[시작시간]: 10:10\r\n[종료시간]: 11:20\r\n[소재사이즈]: 150x120x5T\r\n[소재종류]: PEEK 5T\r\n- 전면 기준면 페이스밀링 황삭 가공 진행\r\n- 절삭유 분사 및 진공 흡착 압력 게이지 상시 모니터링",
+            X = 780,
+            Y = 80
+        };
+
+        var n5 = new WorkflowNode
+        {
+            OrderId = orderId,
+            OrderNumber = orderNo,
+            PartName = pName,
+            Title = "1차 중간측정 (CMM 정밀측정)",
+            Category = NodeCategory.Inspection,
+            Status = NodeStatus.Ready,
+            MachineId = "측정실",
+            Assignee = "품질팀",
+            StartTime = "11:20",
+            EndTime = "11:50",
+            MaterialSize = "150x120x5T",
+            MaterialType = "PEEK 5T",
+            Details = "[시작시간]: 11:20\r\n[종료시간]: 11:50\r\n[소재사이즈]: 150x120x5T\r\n[소재종류]: PEEK 5T\r\n- 1차 가공 후 평면도 및 기준 가이드홀 3차원 CMM 측정\r\n- 홀간 피치 누적 공차 ±0.003mm 규격 합격 판정",
+            X = 1020,
+            Y = 80
+        };
+
+        var n6 = new WorkflowNode
+        {
+            OrderId = orderId,
+            OrderNumber = orderNo,
+            PartName = pName,
+            Title = "2차 미세피치 정삭 (홀가공)",
+            Category = NodeCategory.Machining,
+            Status = NodeStatus.Ready,
+            MachineId = "R02",
+            Assignee = _session.DisplayName,
+            StartTime = "13:00",
+            EndTime = "14:30",
+            MaterialSize = "150x120x5T",
+            MaterialType = "PEEK 5T",
+            Details = "[시작시간]: 13:00\r\n[종료시간]: 14:30\r\n[소재사이즈]: 150x120x5T\r\n[소재종류]: PEEK 5T\r\n- 초경 0.15mm 극소경 드릴 마이크로 홀 고속 정밀가공\r\n- 80㎛ 피치 미세 패턴 가공 및 40,000 RPM 스핀들 고정밀 제어",
+            X = 1260,
+            Y = 80
+        };
+
+        var n7 = new WorkflowNode
+        {
+            OrderId = orderId,
+            OrderNumber = orderNo,
+            PartName = pName,
+            Title = "챔퍼 및 버(Burr) 제거",
+            Category = NodeCategory.Collaboration,
+            Status = NodeStatus.Ready,
+            MachineId = "후공정",
+            Assignee = "이서브",
+            SubWorkerName = "이서브",
+            SubWorkerInstruction = "40X 현미경 하에서 미세 홀 Burr 수작업 전수 제거 요망",
+            StartTime = "14:30",
+            EndTime = "15:10",
+            MaterialSize = "150x120x5T",
+            MaterialType = "PEEK 5T",
+            Details = "[시작시간]: 14:30\r\n[종료시간]: 15:10\r\n[소재사이즈]: 150x120x5T\r\n[소재종류]: PEEK 5T\r\n- 40배율 광학 현미경 하에서 미세 홀 Burr 수작업 정밀 제거\r\n- 초음파 엣지 챔퍼링 수작업 마무리 손질",
+            X = 1500,
+            Y = 80
+        };
+
+        var n8 = new WorkflowNode
+        {
+            OrderId = orderId,
+            OrderNumber = orderNo,
+            PartName = pName,
+            Title = "최종 비전 정밀검사",
+            Category = NodeCategory.Inspection,
+            Status = NodeStatus.Ready,
+            MachineId = "품질팀",
+            Assignee = "검사실",
+            StartTime = "15:10",
+            EndTime = "16:00",
+            MaterialSize = "150x120x5T",
+            MaterialType = "PEEK 5T",
+            Details = "[시작시간]: 15:10\r\n[종료시간]: 16:00\r\n[소재사이즈]: 150x120x5T\r\n[소재종류]: PEEK 5T\r\n- 비접촉 광학 비전 측정기 전수 피치 및 진원도 검사\r\n- 최종 검사 성적서 발행 및 합격 필증 부착",
+            X = 1740,
+            Y = 80
+        };
+
+        var n9 = new WorkflowNode
+        {
+            OrderId = orderId,
+            OrderNumber = orderNo,
+            PartName = pName,
+            Title = "초음파 세척 & ESD 포장",
+            Category = NodeCategory.PostProcess,
+            Status = NodeStatus.Ready,
+            MachineId = "세척실",
+            Assignee = "이서브",
+            StartTime = "16:00",
+            EndTime = "16:40",
+            MaterialSize = "150x120x5T",
+            MaterialType = "PEEK 5T",
+            Details = "[시작시간]: 16:00\r\n[종료시간]: 16:40\r\n[소재사이즈]: 150x120x5T\r\n[소재종류]: PEEK 5T\r\n- 무수에탄올 3단계 초음파 정밀 세척 및 클린 에어 건조\r\n- 대전방지(ESD) 진공 팩킹 및 바코드 라벨링 출고 준비",
+            X = 1980,
+            Y = 80
+        };
+
+        _canvas.AddNode(n1);
+        _canvas.AddNode(n2);
+        _canvas.AddNode(n3);
+        _canvas.AddNode(n4);
+        _canvas.AddNode(n5);
+        _canvas.AddNode(n6);
+        _canvas.AddNode(n7);
+        _canvas.AddNode(n8);
+        _canvas.AddNode(n9);
+
+        _canvas.AddEdge(n1.Id, n2.Id, EdgeType.Sequence);
+        _canvas.AddEdge(n2.Id, n3.Id, EdgeType.Sequence);
+        _canvas.AddEdge(n3.Id, n4.Id, EdgeType.Sequence);
+        _canvas.AddEdge(n4.Id, n5.Id, EdgeType.Sequence);
+        _canvas.AddEdge(n5.Id, n6.Id, EdgeType.Sequence);
+        _canvas.AddEdge(n6.Id, n7.Id, EdgeType.Delegation);
+        _canvas.AddEdge(n7.Id, n8.Id, EdgeType.Sequence);
+        _canvas.AddEdge(n8.Id, n9.Id, EdgeType.Sequence);
+
+        _canvas.ArrangeByTimeline();
+
+        _canvas.SelectedNode = n1;
+        _detailPanel.BindNode(n1);
+
+        UpdateWorkflowStats();
+        SaveWorkflowDraftLocally(silent: true);
+    }
+
+    private void PopulateFallbackOrders()
+    {
+        _cboOrders.Items.Clear();
+        _cachedOrders.Clear();
+
+        string sampleJson = @"[
+          {
+            ""orderId"": 1,
+            ""orderNumber"": ""WO-2026-001"",
+            ""customerName"": ""삼성전자 반도체사업부"",
+            ""status"": ""진행중"",
+            ""parts"": [
+              { ""partId"": 1, ""partCode"": ""PRB-001"", ""partName"": ""프로브카드 인터포저"", ""material"": ""PEEK"", ""thickness"": 5.0, ""targetQty"": 2, ""productionType"": ""시제품"" },
+              { ""partId"": 2, ""partCode"": ""PRB-002"", ""partName"": ""프로브카드 고정 가이드플레이트"", ""material"": ""SUS304"", ""thickness"": 3.0, ""targetQty"": 4, ""productionType"": ""양산"" },
+              { ""partId"": 3, ""partCode"": ""SCK-001"", ""partName"": ""반도체 테스트 소켓 상판"", ""material"": ""AL6061"", ""thickness"": 10.0, ""targetQty"": 2, ""productionType"": ""양산"" }
+            ]
+          },
+          {
+            ""orderId"": 2,
+            ""orderNumber"": ""WO-2026-002"",
+            ""customerName"": ""SK하이닉스"",
+            ""status"": ""대기"",
+            ""parts"": [
+              { ""partId"": 4, ""partCode"": ""PRB-003"", ""partName"": ""프로브카드 베이스 플레이트"", ""material"": ""AL6061"", ""thickness"": 15.0, ""targetQty"": 1, ""productionType"": ""단품"" },
+              { ""partId"": 5, ""partCode"": ""JIG-001"", ""partName"": ""정밀 지그 블록"", ""material"": ""SKD11"", ""thickness"": 20.0, ""targetQty"": 2, ""productionType"": ""단품"" }
+            ]
+          }
+        ]";
+
+        try
+        {
+            using var doc = JsonDocument.Parse(sampleJson);
+            _cachedOrders = doc.RootElement.EnumerateArray().Select(e => e.Clone()).ToList();
+            foreach (var o in _cachedOrders)
+            {
+                string orderNo = o.GetProperty("orderNumber").GetString() ?? "";
+                string customer = o.TryGetProperty("customerName", out var cn) ? cn.GetString() ?? "" : "";
+                string status = o.TryGetProperty("status", out var st) ? st.GetString() ?? "" : "대기";
+                _cboOrders.Items.Add($"[{orderNo}] {customer} ({status})");
+            }
+            if (_cboOrders.Items.Count > 0)
+            {
+                _cboOrders.SelectedIndex = 0;
+            }
+        }
+        catch { }
+    }
+
     public void GenerateStandardWorkflowForSelectedPart(bool confirmIfNotEmpty = false)
     {
         string orderNo = "WO-2026-002";

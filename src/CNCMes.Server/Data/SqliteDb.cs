@@ -390,6 +390,7 @@ public class SqliteDb
 
         // 최초 DB 생성 시에만 7대 CNC 장비 기본 시딩 (이후 사용자가 추가/삭제한 장비 목록 유지)
         SeedMachines(conn);
+        SeedInitialWorkOrders(conn);
 
         // 최초 구동 또는 관리자 미존재 시 기본 마스터 관리자(admin / admin1234) 자동 시딩
         if (!HasAdminUser())
@@ -399,6 +400,67 @@ public class SqliteDb
         }
 
         _logger.LogInformation("CNC MES SQLite Database initialized successfully.");
+    }
+
+
+    private void SeedInitialWorkOrders(SqliteConnection conn)
+    {
+        try
+        {
+            using var chkCmd = conn.CreateCommand();
+            chkCmd.CommandText = "SELECT COUNT(*) FROM work_orders;";
+            long count = Convert.ToInt64(chkCmd.ExecuteScalar() ?? 0);
+            if (count > 0) return;
+
+            var now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+
+            // Seed WO-2026-001 (삼성전자 - 프로브카드)
+            using var cmd1 = conn.CreateCommand();
+            cmd1.CommandText = @"
+                INSERT INTO work_orders (order_number, customer_name, target_delivery_date, status, progress_rate, notes, created_by, created_at, updated_at)
+                VALUES ('WO-2026-001', '삼성전자 반도체사업부', date('now', '+7 days'), '진행중', 10, '반도체 테스트 프로브카드 인터포저 긴급 제작 건', 'admin', @now, @now);
+                SELECT last_insert_rowid();
+            ";
+            cmd1.Parameters.AddWithValue("@now", now);
+            long wo1Id = Convert.ToInt64(cmd1.ExecuteScalar());
+
+            // Parts for WO-2026-001
+            using var p1Cmd = conn.CreateCommand();
+            p1Cmd.CommandText = @"
+                INSERT INTO wo_parts (order_id, part_code, part_name, material, thickness, target_qty, completed_qty, production_type, current_step_sequence, status, created_at)
+                VALUES (@oid, 'PRB-001', '프로브카드 인터포저', 'PEEK', 5.0, 2, 0, '시제품', 1, '진행중', @now),
+                       (@oid, 'PRB-002', '프로브카드 고정 가이드플레이트', 'SUS304', 3.0, 4, 0, '양산', 1, '대기', @now),
+                       (@oid, 'SCK-001', '반도체 테스트 소켓 상판', 'AL6061', 10.0, 2, 0, '양산', 1, '대기', @now);
+            ";
+            p1Cmd.Parameters.AddWithValue("@oid", wo1Id);
+            p1Cmd.Parameters.AddWithValue("@now", now);
+            p1Cmd.ExecuteNonQuery();
+
+            // Seed WO-2026-002 (SK하이닉스)
+            using var cmd2 = conn.CreateCommand();
+            cmd2.CommandText = @"
+                INSERT INTO work_orders (order_number, customer_name, target_delivery_date, status, progress_rate, notes, created_by, created_at, updated_at)
+                VALUES ('WO-2026-002', 'SK하이닉스', date('now', '+14 days'), '대기', 0, '프로브카드 베이스 플레이트 정밀가공', 'admin', @now, @now);
+                SELECT last_insert_rowid();
+            ";
+            cmd2.Parameters.AddWithValue("@now", now);
+            long wo2Id = Convert.ToInt64(cmd2.ExecuteScalar());
+
+            using var p2Cmd = conn.CreateCommand();
+            p2Cmd.CommandText = @"
+                INSERT INTO wo_parts (order_id, part_code, part_name, material, thickness, target_qty, completed_qty, production_type, current_step_sequence, status, created_at)
+                VALUES (@oid, 'PRB-003', '프로브카드 베이스 플레이트', 'AL6061', 15.0, 1, 0, '단품', 1, '대기', @now);
+            ";
+            p2Cmd.Parameters.AddWithValue("@oid", wo2Id);
+            p2Cmd.Parameters.AddWithValue("@now", now);
+            p2Cmd.ExecuteNonQuery();
+
+            _logger.LogInformation("기본 작업지시서(프로브카드 등 2건) 시딩 완료.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("작업지시서 기본 시딩 예외 무시: {Message}", ex.Message);
+        }
     }
 
     private void SeedMachines(SqliteConnection conn)

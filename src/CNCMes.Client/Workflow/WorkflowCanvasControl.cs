@@ -12,7 +12,8 @@ public class WorkflowCanvasControl : UserControl
         public static readonly Color GridDot = Color.FromArgb(30, 45, 70);         // #1e2d46
         public static readonly Color NodeBg = Color.FromArgb(17, 26, 44);          // #111a2c
         public static readonly Color NodeBorder = Color.FromArgb(45, 65, 105);     // #2d4169
-        public static readonly Color NodeSelected = Color.FromArgb(14, 165, 233);  // Sky #0ea5e9
+        public static readonly Color NodeSelected = Color.FromArgb(14, 165, 233);
+        public static readonly Color AccentSky = Color.FromArgb(14, 165, 233);  // Sky #0ea5e9
         public static readonly Color TextWhite = Color.FromArgb(248, 250, 252);
         public static readonly Color TextMuted = Color.FromArgb(160, 175, 195);
         
@@ -320,6 +321,100 @@ public class WorkflowCanvasControl : UserControl
         }
 
         ResetView();
+        WorkflowChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// 노드의 [시작시간]과 [설비(MachineId)]에 맞춰 행과 열을 계산하여 타임라인 형태로 칼각 정렬
+    /// </summary>
+    public void ArrangeByTimeline()
+    {
+        if (Nodes.Count == 0) return;
+
+        static double ParseTime(string timeStr, double defaultVal)
+        {
+            if (string.IsNullOrWhiteSpace(timeStr)) return defaultVal;
+            var parts = timeStr.Trim().Split(':', '시', ' ');
+            if (parts.Length >= 2 && double.TryParse(parts[0], out double h) && double.TryParse(parts[1].Replace("분", ""), out double m))
+            {
+                return h + (m / 60.0);
+            }
+            if (double.TryParse(timeStr, out double onlyH)) return onlyH;
+            return defaultVal;
+        }
+
+        // 1. Assign sequential times to nodes missing StartTime
+        double curTime = 8.5; // Start at 08:30 AM
+        foreach (var node in Nodes)
+        {
+            if (string.IsNullOrWhiteSpace(node.StartTime))
+            {
+                int h = (int)curTime;
+                int m = (int)Math.Round((curTime - h) * 60);
+                node.StartTime = $"{h:D2}:{m:D2}";
+
+                double endT = curTime + 1.0;
+                int eh = (int)endT;
+                int em = (int)Math.Round((endT - eh) * 60);
+                node.EndTime = $"{eh:D2}:{em:D2}";
+                curTime += 1.0;
+            }
+        }
+
+        // 2. Identify and prioritize Machine rows (Lanes)
+        var priorityOrder = new List<string> { "R01", "R02", "R03", "R04", "측정실", "세척실", "품질팀" };
+        var machines = Nodes.Select(n => string.IsNullOrEmpty(n.MachineId) ? "R01" : n.MachineId).Distinct().ToList();
+        machines.Sort((a, b) =>
+        {
+            int idxA = priorityOrder.IndexOf(a);
+            int idxB = priorityOrder.IndexOf(b);
+            if (idxA >= 0 && idxB >= 0) return idxA.CompareTo(idxB);
+            if (idxA >= 0) return -1;
+            if (idxB >= 0) return 1;
+            return string.Compare(a, b, StringComparison.Ordinal);
+        });
+
+        var machineRows = new Dictionary<string, int>();
+        for (int i = 0; i < machines.Count; i++)
+        {
+            machineRows[machines[i]] = i;
+        }
+
+        // 3. Find global min time to establish timeline baseline (X=0)
+        double minTime = Nodes.Min(n => ParseTime(n.StartTime, 8.5));
+        double baseTime = Math.Floor(minTime); // e.g. 8.0
+
+        float startX = 60f;
+        float pixelsPerHour = 240f; // 1 hour = 240px width
+        float rowHeight = 160f;
+        float startY = 80f;
+
+        // 4. Position nodes by Machine Row and Time Column
+        foreach (var mach in machines)
+        {
+            int rowIdx = machineRows[mach];
+            float y = startY + (rowIdx * rowHeight);
+
+            var machNodes = Nodes.Where(n => (string.IsNullOrEmpty(n.MachineId) ? "R01" : n.MachineId) == mach)
+                                 .OrderBy(n => ParseTime(n.StartTime, 8.5))
+                                 .ToList();
+
+            float lastRight = startX - 20f;
+            foreach (var node in machNodes)
+            {
+                double nodeTime = ParseTime(node.StartTime, 8.5);
+                float desiredX = startX + (float)((nodeTime - baseTime) * pixelsPerHour);
+
+                // Prevent collision on same machine lane
+                float actualX = Math.Max(desiredX, lastRight + 30f);
+                node.X = actualX;
+                node.Y = y;
+                lastRight = actualX + node.Width;
+            }
+        }
+
+        ResetView();
+        Invalidate();
         WorkflowChanged?.Invoke();
     }
 
@@ -671,6 +766,28 @@ public class WorkflowCanvasControl : UserControl
         {
             var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
             g.DrawString(machText, fontMach, bText, machRect, sf);
+        }
+
+        // Timeline Start/End Time Badge (e.g. 🕒 08:30~09:20)
+        if (!string.IsNullOrEmpty(node.StartTime))
+        {
+            string timeBadgeText = string.IsNullOrEmpty(node.EndTime) ? $"🕒 {node.StartTime}" : $"🕒 {node.StartTime}~{node.EndTime}";
+            using var fontTime = new Font("Consolas", 7.2f, FontStyle.Bold);
+            var timeSize = g.MeasureString(timeBadgeText, fontTime);
+            float timeX = badgeRect.Right + 6f;
+            float maxTimeW = machRect.Left - timeX - 6f;
+
+            if (maxTimeW > 30f)
+            {
+                var timeRect = new RectangleF(timeX, rect.Y + 8, Math.Min(timeSize.Width + 6f, maxTimeW), 18);
+                using var timeBg = new SolidBrush(Color.FromArgb(50, 14, 165, 233));
+                using var timePen = new Pen(Palette.AccentSky, 1f);
+                DrawRoundedRectangle(g, timeBg, timePen, timeRect, 4f);
+
+                using var timeBrush = new SolidBrush(Palette.AccentSky);
+                var sfTime = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter };
+                g.DrawString(timeBadgeText, fontTime, timeBrush, timeRect, sfTime);
+            }
         }
 
         // Title

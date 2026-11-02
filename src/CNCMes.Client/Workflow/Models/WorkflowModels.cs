@@ -63,6 +63,13 @@ public class WorkflowNode
     public DateTime? IssueResolvedAt { get; set; }           // 이슈 조치완료 일시
     public string IssueResolvedBy { get; set; } = "";        // 조치 작업자
     
+    // Timeline & Custom Field Attributes ([시작시간], [종료시간], [소재사이즈], [소재종류] 등)
+    public string StartTime { get; set; } = "";
+    public string EndTime { get; set; } = "";
+    public string MaterialSize { get; set; } = "";
+    public string MaterialType { get; set; } = "";
+    public Dictionary<string, string> CustomFields { get; set; } = new();
+
     public float X { get; set; }
     public float Y { get; set; }
     public float Width { get; set; } = 195f;

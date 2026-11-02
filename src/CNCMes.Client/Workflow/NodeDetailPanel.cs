@@ -21,6 +21,8 @@ public class NodeDetailPanel : UserControl
         public static readonly Color Purple = Color.FromArgb(168, 85, 247);
         public static readonly Color TextWhite = Color.FromArgb(248, 250, 252);
         public static readonly Color TextSlate400 = Color.FromArgb(148, 163, 184);
+        public static readonly Color TextSlate300 = Color.FromArgb(203, 213, 225);
+        public static readonly Color CatInsp = Color.FromArgb(245, 158, 11);
         public static readonly Color FocusBorder = Color.FromArgb(56, 189, 248);
     }
 
@@ -87,6 +89,13 @@ public class NodeDetailPanel : UserControl
     private ComboBox _cboCategory = null!;
     private ComboBox _cboMachine = null!;
     private TextBox _txtAssignee = null!;
+    // Common Custom Detail Fields ([시작시간], [종료시간], [소재사이즈], [소재종류])
+    private ComboBox _cboStartTime = null!;
+    private ComboBox _cboEndTime = null!;
+    private TextBox _txtMaterialSize = null!;
+    private ComboBox _cboMaterialType = null!;
+    internal FlowLayoutPanel _pnlTagPresets = null!;
+
     private TextBox _txtDetails = null!;
     private TextBox _txtNextProcess = null!;
     private Label _lblSubWorkerTaskStatus = null!;
@@ -136,7 +145,7 @@ public class NodeDetailPanel : UserControl
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 9,
+            RowCount = 10,
             Margin = new Padding(0),
             Padding = new Padding(0)
         };
@@ -145,11 +154,12 @@ public class NodeDetailPanel : UserControl
         mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22f)); // 1: Work Order & Part Info
         mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46f)); // 2: Title & Category Row
         mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46f)); // 3: Machine & Assignee Row
-        mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36f)); // 4: 5 Status Quick Buttons
-        mainLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 45f));  // 5: Details / Memo Box
-        mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30f)); // 6: Next Process Input
-        mainLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 55f));  // 7: Sub-worker Dedicated Section
-        mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36f)); // 8: Action Buttons (Save/Duplicate/Disconnect/Delete)
+        mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34f)); // 4: 5 Status Quick Buttons
+        mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 58f)); // 5: Common Custom Fields
+        mainLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 45f));  // 6: Details / Memo Box
+        mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30f)); // 7: Next Process Input
+        mainLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 55f));  // 8: Sub-worker Dedicated Section
+        mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36f)); // 9: Action Buttons
 
         // 0: Header
         var pnlHeader = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) };
@@ -324,11 +334,125 @@ public class NodeDetailPanel : UserControl
         row4.Controls.Add(_btnStatusIssue, 4, 0);
         mainLayout.Controls.Add(row4, 0, 4);
 
-        // 5: Details / Memo Box
-        var pnlDetails = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) };
-        var lblDetPrompt = new Label { Text = "세부 작업 지시 / 가공 조건 / 점검 메모", Font = new Font("맑은 고딕", 7.8f, FontStyle.Bold), ForeColor = Palette.TextSlate400, Dock = DockStyle.Top, Height = 18 };
-        _btnViewIssueHistory.Dock = DockStyle.Top;
-        _btnViewIssueHistory.Height = 24;
+        // 5: Common Custom Fields Section ([시작시간] / [종료시간] / [소재사이즈] / [소재종류] / 태그프리셋)
+        var pnlCommonFields = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 4,
+            RowCount = 3,
+            Margin = new Padding(0, 2, 0, 2),
+            Padding = new Padding(0)
+        };
+        pnlCommonFields.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 68f)); // Label 1
+        pnlCommonFields.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));  // Input 1
+        pnlCommonFields.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 68f)); // Label 2
+        pnlCommonFields.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));  // Input 2
+        pnlCommonFields.RowStyles.Add(new RowStyle(SizeType.Absolute, 26f)); // Time Row
+        pnlCommonFields.RowStyles.Add(new RowStyle(SizeType.Absolute, 26f)); // Material Row
+
+        var timePresets = new object[] { "08:00", "08:30", "09:00", "09:30", "10:00", "10:30", "11:00", "11:30", "13:00", "13:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30", "17:00", "17:30" };
+        var matPresets = new object[] { "PEEK 5T", "AL6061-T6", "SUS304", "베이크라이트", "MC나일론", "초경합금", "황동(C3604)", "SKD11" };
+
+        var lblStart = new Label { Text = "시작시간:", ForeColor = Palette.AccentSky, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("맑은 고딕", 7.8f, FontStyle.Bold) };
+        _cboStartTime = new ComboBox { Dock = DockStyle.Fill, BackColor = Palette.Bg850, ForeColor = Color.White, Font = new Font("Consolas", 8.5f), DropDownStyle = ComboBoxStyle.DropDown };
+        _cboStartTime.Items.AddRange(timePresets);
+        _cboStartTime.TextChanged += (s, e) => SaveChangesToNode();
+
+        var lblEnd = new Label { Text = "종료시간:", ForeColor = Palette.AccentSky, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("맑은 고딕", 7.8f, FontStyle.Bold) };
+        _cboEndTime = new ComboBox { Dock = DockStyle.Fill, BackColor = Palette.Bg850, ForeColor = Color.White, Font = new Font("Consolas", 8.5f), DropDownStyle = ComboBoxStyle.DropDown };
+        _cboEndTime.Items.AddRange(timePresets);
+        _cboEndTime.TextChanged += (s, e) => SaveChangesToNode();
+
+        var lblMatSize = new Label { Text = "소재사이즈:", ForeColor = Palette.CatInsp, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("맑은 고딕", 7.6f, FontStyle.Bold) };
+        _txtMaterialSize = new TextBox { Dock = DockStyle.Fill, BackColor = Palette.Bg850, ForeColor = Color.White, Font = new Font("맑은 고딕", 8.2f), BorderStyle = BorderStyle.FixedSingle, PlaceholderText = "예: 150x120x5T" };
+        _txtMaterialSize.TextChanged += (s, e) => SaveChangesToNode();
+
+        var lblMatType = new Label { Text = "소재종류:", ForeColor = Palette.CatInsp, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("맑은 고딕", 7.8f, FontStyle.Bold) };
+        _cboMaterialType = new ComboBox { Dock = DockStyle.Fill, BackColor = Palette.Bg850, ForeColor = Color.White, Font = new Font("맑은 고딕", 8.2f), DropDownStyle = ComboBoxStyle.DropDown };
+        _cboMaterialType.Items.AddRange(matPresets);
+        _cboMaterialType.TextChanged += (s, e) => SaveChangesToNode();
+
+        pnlCommonFields.Controls.Add(lblStart, 0, 0);
+        pnlCommonFields.Controls.Add(_cboStartTime, 1, 0);
+        pnlCommonFields.Controls.Add(lblEnd, 2, 0);
+        pnlCommonFields.Controls.Add(_cboEndTime, 3, 0);
+
+        pnlCommonFields.Controls.Add(lblMatSize, 0, 1);
+        pnlCommonFields.Controls.Add(_txtMaterialSize, 1, 1);
+        pnlCommonFields.Controls.Add(lblMatType, 2, 1);
+        pnlCommonFields.Controls.Add(_cboMaterialType, 3, 1);
+
+
+        mainLayout.Controls.Add(pnlCommonFields, 0, 5);
+
+        // 6: Details / Memo Box
+
+        // 6: Details / Memo Box with Quick Preset Tag Buttons right above it
+        var pnlDetails = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 4,
+            Margin = new Padding(0),
+            Padding = new Padding(0)
+        };
+        pnlDetails.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        pnlDetails.RowStyles.Add(new RowStyle(SizeType.Absolute, 18f)); // 0: Prompt Label
+        pnlDetails.RowStyles.Add(new RowStyle(SizeType.Absolute, 28f)); // 1: Tag Buttons
+        pnlDetails.RowStyles.Add(new RowStyle(SizeType.Absolute, 24f)); // 2: Issue Button
+        pnlDetails.RowStyles.Add(new RowStyle(SizeType.Percent, 100f)); // 3: Details TextBox
+
+        var lblDetPrompt = new Label { Text = "세부 작업 지시 / 가공 조건 / 점검 메모 (항목 클릭 시 자동 삽입)", Font = new Font("맑은 고딕", 7.6f, FontStyle.Bold), ForeColor = Palette.TextSlate400, Dock = DockStyle.Fill };
+
+        _pnlTagPresets = new FlowLayoutPanel { Dock = DockStyle.Fill, Margin = new Padding(0), Padding = new Padding(0), WrapContents = false, AutoScroll = false };
+
+        void AddTagBtn(string title, string tagFormat)
+        {
+            var btn = CreateFlatButton(title, Palette.Bg800, Palette.TextSlate300);
+            btn.Dock = DockStyle.None;
+            btn.Size = new Size(46, 22);
+            btn.Margin = new Padding(1, 1, 1, 1);
+            btn.Font = new Font("맑은 고딕", 6.8f, FontStyle.Bold);
+            btn.Click += (s, e) =>
+            {
+                if (!_txtDetails.Text.Contains(tagFormat))
+                {
+                    _txtDetails.AppendText((string.IsNullOrEmpty(_txtDetails.Text) ? "" : "\r\n") + tagFormat + ": ");
+                    _txtDetails.Focus();
+                }
+            };
+            _pnlTagPresets.Controls.Add(btn);
+        }
+
+        AddTagBtn("+시작", "[시작시간]");
+        AddTagBtn("+종료", "[종료시간]");
+        AddTagBtn("+사이즈", "[소재사이즈]");
+        AddTagBtn("+재질", "[소재종류]");
+        AddTagBtn("+공구", "[사용공구]");
+        AddTagBtn("+가공조건", "[가공조건]");
+
+        var btnAddCustom = CreateFlatButton("+직접추가", Color.FromArgb(40, 14, 165, 233), Palette.AccentSky);
+        btnAddCustom.Dock = DockStyle.None;
+        btnAddCustom.Size = new Size(52, 22);
+        btnAddCustom.Margin = new Padding(1, 1, 1, 1);
+        btnAddCustom.Font = new Font("맑은 고딕", 6.8f, FontStyle.Bold);
+        btnAddCustom.Click += (s, e) =>
+        {
+            using var promptForm = new Form { Text = "커스텀 항목 추가", Size = new Size(320, 140), StartPosition = FormStartPosition.CenterParent, BackColor = Palette.Bg900, ForeColor = Color.White, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false };
+            var txtTag = new TextBox { Text = "클램핑압력", Location = new Point(16, 20), Width = 270, BackColor = Palette.Bg850, ForeColor = Color.White };
+            var btnOk = new Button { Text = "추가", DialogResult = DialogResult.OK, Location = new Point(206, 56), Width = 80, BackColor = Palette.AccentSky, ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
+            promptForm.Controls.AddRange(new Control[] { txtTag, btnOk });
+            promptForm.AcceptButton = btnOk;
+            if (promptForm.ShowDialog(this) == DialogResult.OK && !string.IsNullOrWhiteSpace(txtTag.Text))
+            {
+                string tag = $"[{txtTag.Text.Trim()}]";
+                _txtDetails.AppendText((string.IsNullOrEmpty(_txtDetails.Text) ? "" : "\r\n") + tag + ": ");
+                AddTagBtn($"+{txtTag.Text.Trim()}", tag);
+            }
+        };
+        _pnlTagPresets.Controls.Add(btnAddCustom);
+
+        _btnViewIssueHistory.Dock = DockStyle.Fill;
         _txtDetails = new TextBox
         {
             Dock = DockStyle.Fill,
@@ -340,12 +464,14 @@ public class NodeDetailPanel : UserControl
             Font = new Font("맑은 고딕", 8.8f)
         };
         _txtDetails.TextChanged += (s, e) => SaveChangesToNode();
-        pnlDetails.Controls.Add(_txtDetails);
-        pnlDetails.Controls.Add(_btnViewIssueHistory);
-        pnlDetails.Controls.Add(lblDetPrompt);
-        mainLayout.Controls.Add(pnlDetails, 0, 5);
 
-        // 6: Next Process Input
+        pnlDetails.Controls.Add(lblDetPrompt, 0, 0);
+        pnlDetails.Controls.Add(_pnlTagPresets, 0, 1);
+        pnlDetails.Controls.Add(_btnViewIssueHistory, 0, 2);
+        pnlDetails.Controls.Add(_txtDetails, 0, 3);
+        mainLayout.Controls.Add(pnlDetails, 0, 6);
+
+        // 7: Next Process Input
         var pnlNext = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = new Padding(0, 2, 0, 2) };
         pnlNext.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 95f));
         pnlNext.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
@@ -353,9 +479,9 @@ public class NodeDetailPanel : UserControl
         _txtNextProcess = new TextBox { Dock = DockStyle.Fill, BackColor = Palette.Bg850, ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle, Font = new Font("맑은 고딕", 8.8f) };
         _txtNextProcess.TextChanged += (s, e) => SaveChangesToNode();
         pnlNext.Controls.Add(_txtNextProcess, 1, 0);
-        mainLayout.Controls.Add(pnlNext, 0, 6);
+        mainLayout.Controls.Add(pnlNext, 0, 7);
 
-        // 7: Sub-worker Dedicated Section
+        // 8: Sub-worker Dedicated Section
         var pnlSubSection = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) };
         var pnlSubHeader = new Panel { Dock = DockStyle.Top, Height = 20 };
         var lblSubTitle = new Label { Text = "👥 서브인원 배정 및 작업 지시 (실제 서버 지시 연동)", Font = new Font("맑은 고딕", 8f, FontStyle.Bold), ForeColor = Palette.Purple, Dock = DockStyle.Left, AutoSize = true };
@@ -397,7 +523,7 @@ public class NodeDetailPanel : UserControl
         pnlSubSection.Controls.Add(pnlSubBody);
         pnlSubSection.Controls.Add(_btnSendSubTask);
         pnlSubSection.Controls.Add(pnlSubHeader);
-        mainLayout.Controls.Add(pnlSubSection, 0, 7);
+        mainLayout.Controls.Add(pnlSubSection, 0, 8);
 
         // 8: Action Buttons (Save / Duplicate / Disconnect / Delete)
         var row8 = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, Margin = new Padding(0, 3, 0, 0) };
@@ -481,7 +607,7 @@ public class NodeDetailPanel : UserControl
         row8.Controls.Add(_btnDuplicate, 1, 0);
         row8.Controls.Add(_btnDisconnect, 2, 0);
         row8.Controls.Add(_btnDelete, 3, 0);
-        mainLayout.Controls.Add(row8, 0, 8);
+        mainLayout.Controls.Add(row8, 0, 9);
 
         Controls.Add(mainLayout);
         SetEmptyState();
@@ -554,6 +680,10 @@ public class NodeDetailPanel : UserControl
                 _txtAssignee.Text = node.Assignee;
                 _txtDetails.Text = node.Details;
                 _txtNextProcess.Text = node.NextProcess;
+                _cboStartTime.Text = node.StartTime;
+                _cboEndTime.Text = node.EndTime;
+                _txtMaterialSize.Text = node.MaterialSize;
+                _cboMaterialType.Text = node.MaterialType;
                 _txtSubWorker.Text = string.IsNullOrEmpty(node.SubWorkerName) ? "이서브" : node.SubWorkerName;
                 _txtSubInstruction.Text = node.SubWorkerInstruction;
 
@@ -634,6 +764,10 @@ public class NodeDetailPanel : UserControl
                 _txtAssignee.Text = nodes.All(n => n.Assignee == nodes[0].Assignee) ? nodes[0].Assignee : "";
                 _txtDetails.Text = "";
                 _txtNextProcess.Text = "";
+            if (_cboStartTime != null) _cboStartTime.Text = "";
+            if (_cboEndTime != null) _cboEndTime.Text = "";
+            if (_txtMaterialSize != null) _txtMaterialSize.Text = "";
+            if (_cboMaterialType != null) _cboMaterialType.Text = "";
                 _txtSubWorker.Text = "";
                 _txtSubInstruction.Text = "";
                 _lblSubWorkerTaskStatus.Text = $"○ {nodes.Count}개 노드";
@@ -681,12 +815,20 @@ public class NodeDetailPanel : UserControl
             var selectedCat = (NodeCategory)Math.Clamp(_cboCategory.SelectedIndex, 0, 5);
             string assignee = _txtAssignee.Text.Trim();
             string details = _txtDetails.Text;
+            string sTime = _cboStartTime?.Text.Trim() ?? "";
+            string eTime = _cboEndTime?.Text.Trim() ?? "";
+            string mSize = _txtMaterialSize?.Text.Trim() ?? "";
+            string mType = _cboMaterialType?.Text.Trim() ?? "";
 
             foreach (var node in _currentNodes)
             {
                 node.MachineId = selectedMach;
                 if (!string.IsNullOrWhiteSpace(assignee)) node.Assignee = assignee;
                 if (!string.IsNullOrWhiteSpace(details)) node.Details = details;
+                if (!string.IsNullOrWhiteSpace(sTime)) node.StartTime = sTime;
+                if (!string.IsNullOrWhiteSpace(eTime)) node.EndTime = eTime;
+                if (!string.IsNullOrWhiteSpace(mSize)) node.MaterialSize = mSize;
+                if (!string.IsNullOrWhiteSpace(mType)) node.MaterialType = mType;
             }
 
             NodesUpdated?.Invoke(_currentNodes);
@@ -703,6 +845,10 @@ public class NodeDetailPanel : UserControl
         _currentNode.NextProcess = _txtNextProcess.Text.Trim();
         _currentNode.SubWorkerName = _txtSubWorker.Text.Trim();
         _currentNode.SubWorkerInstruction = _txtSubInstruction.Text.Trim();
+        if (_cboStartTime != null) _currentNode.StartTime = _cboStartTime.Text.Trim();
+        if (_cboEndTime != null) _currentNode.EndTime = _cboEndTime.Text.Trim();
+        if (_txtMaterialSize != null) _currentNode.MaterialSize = _txtMaterialSize.Text.Trim();
+        if (_cboMaterialType != null) _currentNode.MaterialType = _cboMaterialType.Text.Trim();
 
         NodeUpdated?.Invoke(_currentNode);
     }
