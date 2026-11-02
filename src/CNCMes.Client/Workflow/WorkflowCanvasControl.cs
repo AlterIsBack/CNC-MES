@@ -48,7 +48,41 @@ public class WorkflowCanvasControl : UserControl
         return null;
     }
 
-    public double GetEffectiveTimelineBaseHour()
+    public void SetTimelineInterval(float pxPerHour)
+    {
+        PixelsPerHour = Math.Clamp(pxPerHour, 120f, 720f);
+        ArrangeByTimeline(autoFitBaseHour: false);
+        Invalidate();
+    }
+
+    public void ZoomTimelineInterval(float delta)
+    {
+        SetTimelineInterval(PixelsPerHour + delta);
+    }
+
+    public (string Size, string Material, string Fixing) GetFirstNodeMaterialInfo()
+    {
+        var first = Nodes.FirstOrDefault();
+        if (first == null) return ("", "", "");
+        return (first.MaterialSize ?? "", first.MaterialType ?? "", first.FixingMethod ?? "");
+    }
+
+    public void PropagateFirstNodeMaterial(string size, string material, string fixing)
+    {
+        if (Nodes.Count <= 1) return;
+        foreach (var node in Nodes.Skip(1))
+        {
+            if (!node.IsMaterialCustomized)
+            {
+                node.MaterialSize = size;
+                node.MaterialType = material;
+                node.FixingMethod = fixing;
+            }
+        }
+        Invalidate();
+    }
+
+        public double GetEffectiveTimelineBaseHour()
     {
         if (CustomTimelineBaseHour.HasValue)
             return CustomTimelineBaseHour.Value;
@@ -112,6 +146,15 @@ public class WorkflowCanvasControl : UserControl
 
     // Hit / Click Rectangles for Interactive Elements in Screen Space
     private RectangleF _emptyButtonScreenRect;
+    private RectangleF _emptyCloseButtonTopRect;
+    private RectangleF _emptyCloseButtonBottomRect;
+    private bool _hideEmptyCanvasGuide = false;
+
+    public bool HideEmptyCanvasGuide
+    {
+        get => _hideEmptyCanvasGuide;
+        set { _hideEmptyCanvasGuide = value; Invalidate(); }
+    }
     private RectangleF _selectedEdgeCutButtonScreenRect;
 
     public WorkflowCanvasControl()
@@ -690,17 +733,27 @@ public class WorkflowCanvasControl : UserControl
 
     private void DrawEmptyCanvasGuide(Graphics g)
     {
-        float boxW = 540f;
-        float boxH = 170f;
+        if (_hideEmptyCanvasGuide) return;
+
+        float boxW = 580f;
+        float boxH = 175f;
         float boxX = (Width - boxW) / 2f;
         float boxY = (Height - boxH) / 2f - 20f;
 
         var boxRect = new RectangleF(boxX, boxY, boxW, boxH);
 
-        using var bgBrush = new SolidBrush(Color.FromArgb(235, 15, 23, 42));
+        using var bgBrush = new SolidBrush(Color.FromArgb(240, 15, 23, 42));
         using var borderPen = new Pen(Palette.CatPrep, 1.5f);
         DrawRoundedRectangle(g, bgBrush, borderPen, boxRect, 10f);
 
+        // 1. 우측 상단 닫기 [✕] 버튼
+        _emptyCloseButtonTopRect = new RectangleF(boxX + boxW - 36f, boxY + 12f, 24f, 24f);
+        using var brushCloseX = new SolidBrush(Color.FromArgb(148, 163, 184));
+        using var fontCloseX = new Font("맑은 고딕", 10.5f, FontStyle.Bold);
+        var sfCenter = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+        g.DrawString("✕", fontCloseX, brushCloseX, _emptyCloseButtonTopRect, sfCenter);
+
+        // 2. 제목 및 안내 문구
         using var fontIcon = new Font("Segoe UI Symbol", 20f);
         using var fontTitle = new Font("맑은 고딕", 12f, FontStyle.Bold);
         using var fontSub = new Font("맑은 고딕", 9f);
@@ -712,22 +765,30 @@ public class WorkflowCanvasControl : UserControl
         g.DrawString("기본 공정 워크플로우를 자동 생성하시겠습니까?", fontTitle, brushWhite, boxX + 65, boxY + 24);
         g.DrawString("좌측에서 작업지시서와 부품을 선택한 후 아래 버튼을 클릭하면 표준 가공 공정이 배치됩니다.", fontSub, brushMuted, boxX + 65, boxY + 54);
 
-        float btnW = 240f;
+        // 3. 하단 액션 버튼: [⚡ 기본 워크플로우 생성] 및 [✕ 닫기]
+        float btnW = 230f;
         float btnH = 38f;
-        float btnX = boxX + (boxW - btnW) / 2f;
-        float btnY = boxY + 98f;
-        _emptyButtonScreenRect = new RectangleF(btnX, btnY, btnW, btnH);
+        float closeW = 90f;
+        float gap = 12f;
+        float totalW = btnW + closeW + gap;
+        float startBtnX = boxX + (boxW - totalW) / 2f;
+        float btnY = boxY + 102f;
 
+        // 생성 버튼
+        _emptyButtonScreenRect = new RectangleF(startBtnX, btnY, btnW, btnH);
         using var btnBg = new SolidBrush(Palette.CatMach);
         using var btnBorder = new Pen(Color.FromArgb(100, 255, 255, 255), 1.2f);
         DrawRoundedRectangle(g, btnBg, btnBorder, _emptyButtonScreenRect, 6f);
-
         using var fontBtn = new Font("맑은 고딕", 9.5f, FontStyle.Bold);
-        var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-        g.DrawString("⚡ 기본 워크플로우 생성", fontBtn, Brushes.White, _emptyButtonScreenRect, sf);
+        g.DrawString("⚡ 기본 워크플로우 생성", fontBtn, Brushes.White, _emptyButtonScreenRect, sfCenter);
+
+        // [✕ 닫기] 버튼
+        _emptyCloseButtonBottomRect = new RectangleF(startBtnX + btnW + gap, btnY, closeW, btnH);
+        using var closeBg = new SolidBrush(Color.FromArgb(51, 65, 85));
+        using var closeBorder = new Pen(Color.FromArgb(100, 148, 163, 184), 1f);
+        DrawRoundedRectangle(g, closeBg, closeBorder, _emptyCloseButtonBottomRect, 6f);
+        g.DrawString("✕ 닫기", fontBtn, Brushes.White, _emptyCloseButtonBottomRect, sfCenter);
     }
-
-
     private void DrawTimelineGuides(Graphics g)
     {
         if (Nodes.Count == 0 && TitleBoxes.Count == 0) return;
@@ -1439,8 +1500,17 @@ public class WorkflowCanvasControl : UserControl
 
         _mouseDownLocation = e.Location;
 
-        // 1. Check if clicked the Empty Guide Button
-        if (Nodes.Count == 0 && _emptyButtonScreenRect.Contains(e.Location))
+        // 1. Check if clicked the Empty Guide Close Buttons
+        if (Nodes.Count == 0 && !_hideEmptyCanvasGuide &&
+            (_emptyCloseButtonTopRect.Contains(e.Location) || _emptyCloseButtonBottomRect.Contains(e.Location)))
+        {
+            _hideEmptyCanvasGuide = true;
+            Invalidate();
+            return;
+        }
+
+        // 1-1. Check if clicked the Empty Guide Generate Button
+        if (Nodes.Count == 0 && !_hideEmptyCanvasGuide && _emptyButtonScreenRect.Contains(e.Location))
         {
             RequestGenerateDefaultWorkflow?.Invoke();
             return;
@@ -1726,7 +1796,11 @@ public class WorkflowCanvasControl : UserControl
         else if (overAutoFit || overIssueBadge) Cursor = Cursors.Hand;
         else if (overHeader) Cursor = Cursors.SizeAll;
         else if (nearPort) Cursor = Cursors.Cross;
-        else if (Nodes.Count == 0 && _emptyButtonScreenRect.Contains(e.Location)) Cursor = Cursors.Hand;
+        else if (Nodes.Count == 0 && !_hideEmptyCanvasGuide && 
+                 (_emptyButtonScreenRect.Contains(e.Location) || _emptyCloseButtonTopRect.Contains(e.Location) || _emptyCloseButtonBottomRect.Contains(e.Location)))
+        {
+            Cursor = Cursors.Hand;
+        }
         else Cursor = Cursors.Default;
     }
 
@@ -1981,6 +2055,14 @@ public class WorkflowCanvasControl : UserControl
 
     protected override void OnMouseWheel(MouseEventArgs e)
     {
+        // 눈금자 영역(상단 40px) 또는 Ctrl+Shift 마우스 휠 스크롤 시 타임라인 간격 조절
+        if (ShowTimelineGuides && (e.Y <= 40 || (ModifierKeys & (Keys.Control | Keys.Shift)) == (Keys.Control | Keys.Shift)))
+        {
+            float deltaPx = e.Delta > 0 ? 30f : -30f;
+            SetTimelineInterval(PixelsPerHour + deltaPx);
+            return;
+        }
+
         base.OnMouseWheel(e);
 
         float oldZoom = _zoom;

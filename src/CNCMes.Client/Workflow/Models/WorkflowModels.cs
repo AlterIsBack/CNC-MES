@@ -68,7 +68,8 @@ public class WorkflowNode
     public string EndTime { get; set; } = "";
     public string MaterialSize { get; set; } = "";
     public string MaterialType { get; set; } = "";
-    public string FixingMethod { get; set; } = "바이스"; // 바이스, 진공흡착, 클램프, 마그네틱, 전용지그 등
+    public string FixingMethod { get; set; } = "바이스";
+    public bool IsMaterialCustomized { get; set; } = false; // 바이스, 진공흡착, 클램프, 마그네틱, 전용지그 등
     public Dictionary<string, string> CustomFields { get; set; } = new();
 
     public float X { get; set; }

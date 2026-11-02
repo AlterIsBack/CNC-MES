@@ -35,6 +35,7 @@ public class WorkflowMainForm : Form
     private Label _lblLiveClock = null!;
     private Button _btnToggleTimelineGuides = null!;
     private Button _btnTimelineBaseConfig = null!;
+    private Button _btnTimelineInterval = null!;
     private FlowLayoutPanel _pnlSubWorkerCards = null!;
     private Button _btnRefreshAll = null!;
     private Button _btnOpenNoticesTop = null!;
@@ -110,7 +111,7 @@ public class WorkflowMainForm : Form
 
     private void InitializeUI()
     {
-        Text = $"CNC-MES 스마트 현장 터미널 v1.5.0 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
+        Text = $"CNC-MES 스마트 현장 터미널 v1.5.1 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
         Size = new Size(1600, 960);
         MinimumSize = new Size(1280, 720);
         StartPosition = FormStartPosition.CenterScreen;
@@ -219,7 +220,7 @@ public class WorkflowMainForm : Form
         pnlBrand.Controls.Add(pnlIcon);
 
         var lblBrand = new Label { Text = "CNC-MES", Location = new Point(44, 8), Font = new Font("맑은 고딕", 12f, FontStyle.Bold), ForeColor = Color.White, AutoSize = true };
-        var lblVer = new Label { Text = "v1.5.0 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
+        var lblVer = new Label { Text = "v1.5.1 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
         var lblStatus = new Label { Text = "● 서버 정상", Location = new Point(245, 11), Font = new Font("맑은 고딕", 8f, FontStyle.Bold), ForeColor = Palette.Green, BackColor = Color.FromArgb(80, 6, 78, 59), AutoSize = true, Padding = new Padding(5, 1, 5, 1) };
         var lblSub = new Label { Text = "WORKFLOW-BASED OPERATOR CONTROL SYSTEM", Location = new Point(45, 30), Font = new Font("Consolas", 7.2f), ForeColor = Palette.TextSlate400, AutoSize = true };
         pnlBrand.Controls.AddRange(new Control[] { lblBrand, lblVer, lblStatus, lblSub });
@@ -582,6 +583,28 @@ public class WorkflowMainForm : Form
         _btnTimelineBaseConfig.Font = new Font("맑은 고딕", 8f, FontStyle.Bold);
         _btnTimelineBaseConfig.Click += (s, e) => ShowTimelineBaseMenu(_btnTimelineBaseConfig);
 
+        var btnIntervalDec = CreateFlatButton("➖", Palette.Bg800, Palette.TextSlate300, 28, 28);
+        btnIntervalDec.Font = new Font("맑은 고딕", 8.5f, FontStyle.Bold);
+        btnIntervalDec.Click += (s, e) =>
+        {
+            _canvas.ZoomTimelineInterval(-30f);
+            UpdateTimelineIntervalButtonText();
+            AutoSaveWorkflow();
+        };
+
+        _btnTimelineInterval = CreateFlatButton("⏱ 간격: 보통(280px) ▾", Palette.Bg800, Color.FromArgb(16, 185, 129), 145, 28);
+        _btnTimelineInterval.Font = new Font("맑은 고딕", 8f, FontStyle.Bold);
+        _btnTimelineInterval.Click += (s, e) => ShowTimelineIntervalMenu(_btnTimelineInterval);
+
+        var btnIntervalInc = CreateFlatButton("➕", Palette.Bg800, Palette.TextSlate300, 28, 28);
+        btnIntervalInc.Font = new Font("맑은 고딕", 8.5f, FontStyle.Bold);
+        btnIntervalInc.Click += (s, e) =>
+        {
+            _canvas.ZoomTimelineInterval(30f);
+            UpdateTimelineIntervalButtonText();
+            AutoSaveWorkflow();
+        };
+
         var btnTimelineTop = CreateFlatButton("⏱ 타임라인 정렬", Palette.Bg800, Color.FromArgb(14, 165, 233), 110, 28);
         btnTimelineTop.Click += (s, e) =>
         {
@@ -597,7 +620,7 @@ public class WorkflowMainForm : Form
         canvasToolbar.Controls.AddRange(new Control[]
         {
             btnAddPrep, btnAddMach, btnAddInsp, btnAddCollab, btnAddPost, btnAddIssue,
-            divTool, btnAddTitleGroup, _btnToggleTimelineGuides, _btnTimelineBaseConfig, btnTimelineTop, btnZoomReset, btnSelectAll, _btnToggleBottom
+            divTool, btnAddTitleGroup, _btnToggleTimelineGuides, _btnTimelineBaseConfig, btnIntervalDec, _btnTimelineInterval, btnIntervalInc, btnTimelineTop, btnZoomReset, btnSelectAll, _btnToggleBottom
         });
 
         // Canvas Control
@@ -811,6 +834,13 @@ public class WorkflowMainForm : Form
 
         // 1: Node Details Panel
         _detailPanel = new NodeDetailPanel { Dock = DockStyle.Fill };
+        _detailPanel.IsFirstNodePredicate = (n) => _canvas.Nodes.Count > 0 && _canvas.Nodes[0].Id == n.Id;
+        _detailPanel.GetFirstNodeMaterialProvider = () => _canvas.GetFirstNodeMaterialInfo();
+        _detailPanel.FirstNodeMaterialChanged = (sz, mat, fix) =>
+        {
+            _canvas.PropagateFirstNodeMaterial(sz, mat, fix);
+            AutoSaveWorkflow();
+        };
         _detailPanel.StatusChangeRequested += async (node, newStatus) => await HandleNodeStatusChangeAsync(node, newStatus);
         _detailPanel.BatchStatusChangeRequested += async (nodes, newStatus) =>
         {
@@ -1375,6 +1405,139 @@ public class WorkflowMainForm : Form
             _btnTimelineBaseConfig.Text = $"⏱ 기준: {_canvas.CustomTimelineBaseHour.Value:00}:00 ▾";
         else
             _btnTimelineBaseConfig.Text = $"⏱ 기준: 자동({eff:00}:00) ▾";
+    }
+
+    private void ShowTimelineIntervalMenu(Control anchor)
+    {
+        var cms = new ContextMenuStrip();
+        cms.BackColor = Color.FromArgb(15, 23, 42);
+        cms.ForeColor = Color.White;
+
+        int currentPx = (int)_canvas.PixelsPerHour;
+
+        (int px, string desc)[] presets = new[]
+        {
+            (160, "🔍 매우 좁게 (160px/시간) - 한눈에 전체 조망"),
+            (220, "🔍 좁게 (220px/시간) - 컴팩트 보기"),
+            (280, "🔍 보통 (280px/시간) - 표준 기본값"),
+            (360, "🔍 넓게 (360px/시간) - 여유로운 간격"),
+            (480, "🔍 매우 넓게 (480px/시간) - 상세 타임라인"),
+            (600, "🔍 최대 확대 (600px/시간) - 초정밀 확인")
+        };
+
+        foreach (var p in presets)
+        {
+            string check = Math.Abs(currentPx - p.px) < 15 ? " ✔ " : "    ";
+            var item = cms.Items.Add($"{check}{p.desc}");
+            int targetPx = p.px;
+            item.Click += (s, e) =>
+            {
+                _canvas.SetTimelineInterval(targetPx);
+                UpdateTimelineIntervalButtonText();
+                AutoSaveWorkflow();
+            };
+        }
+
+        cms.Items.Add(new ToolStripSeparator());
+
+        var mCustom = cms.Items.Add("✏️ 픽셀 간격 직접 입력 (120~720px)...");
+        mCustom.Click += (s, e) => PromptCustomTimelineInterval();
+
+        cms.Show(anchor, new Point(0, anchor.Height));
+    }
+
+    private void UpdateTimelineIntervalButtonText()
+    {
+        if (_btnTimelineInterval == null) return;
+        int px = (int)_canvas.PixelsPerHour;
+        string label = px switch
+        {
+            <= 180 => "매우좁게",
+            <= 240 => "좁게",
+            <= 310 => "보통",
+            <= 400 => "넓게",
+            _ => "상세"
+        };
+        _btnTimelineInterval.Text = $"⏱ 간격: {label}({px}px) ▾";
+    }
+
+    private void PromptCustomTimelineInterval()
+    {
+        using var form = new Form
+        {
+            Text = "⏱ 타임라인 1시간당 픽셀 간격 설정",
+            Size = new Size(360, 180),
+            StartPosition = FormStartPosition.CenterParent,
+            BackColor = Color.FromArgb(15, 23, 42),
+            ForeColor = Color.White,
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            MaximizeBox = false,
+            MinimizeBox = false,
+            Font = new Font("맑은 고딕", 9f)
+        };
+
+        var lbl = new Label
+        {
+            Text = "1시간당 타임라인 픽셀 간격을 입력하세요 (120 ~ 720):",
+            Dock = DockStyle.Top,
+            Height = 35,
+            Padding = new Padding(12, 10, 12, 0)
+        };
+
+        var txt = new TextBox
+        {
+            Text = ((int)_canvas.PixelsPerHour).ToString(),
+            Location = new Point(16, 50),
+            Width = 310,
+            Font = new Font("맑은 고딕", 10.5f),
+            BackColor = Color.FromArgb(30, 41, 59),
+            ForeColor = Color.White,
+            BorderStyle = BorderStyle.FixedSingle
+        };
+
+        var btnOk = new Button
+        {
+            Text = "적용",
+            DialogResult = DialogResult.OK,
+            Location = new Point(130, 95),
+            Width = 100,
+            Height = 32,
+            BackColor = Color.FromArgb(16, 185, 129),
+            ForeColor = Color.White,
+            FlatStyle = FlatStyle.Flat
+        };
+        btnOk.FlatAppearance.BorderSize = 0;
+
+        var btnCancel = new Button
+        {
+            Text = "취소",
+            DialogResult = DialogResult.Cancel,
+            Location = new Point(240, 95),
+            Width = 85,
+            Height = 32,
+            BackColor = Color.FromArgb(51, 65, 85),
+            ForeColor = Color.White,
+            FlatStyle = FlatStyle.Flat
+        };
+        btnCancel.FlatAppearance.BorderSize = 0;
+
+        form.Controls.AddRange(new Control[] { lbl, txt, btnOk, btnCancel });
+        form.AcceptButton = btnOk;
+        form.CancelButton = btnCancel;
+
+        if (form.ShowDialog(this) == DialogResult.OK)
+        {
+            if (float.TryParse(txt.Text.Trim(), out float val))
+            {
+                _canvas.SetTimelineInterval(val);
+                UpdateTimelineIntervalButtonText();
+                AutoSaveWorkflow();
+            }
+            else
+            {
+                MessageBox.Show("올바른 숫자를 입력해주세요 (120 ~ 720).", "입력 오류", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
     }
 
     private void PromptCustomTimelineBaseHour()
@@ -2288,6 +2451,8 @@ public class WorkflowMainForm : Form
             newY = _canvas.SelectedNode.Y;
         }
 
+        var (firstSize, firstMat, firstFix) = _canvas.GetFirstNodeMaterialInfo();
+
         var node = new WorkflowNode
         {
             Title = defaultTitle,
@@ -2296,6 +2461,9 @@ public class WorkflowMainForm : Form
             PartName = partName,
             MachineId = _currentMachineId,
             Assignee = _session.DisplayName,
+            MaterialSize = firstSize,
+            MaterialType = firstMat,
+            FixingMethod = string.IsNullOrEmpty(firstFix) ? "바이스" : firstFix,
             X = newX,
             Y = newY
         };

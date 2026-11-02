@@ -129,6 +129,9 @@ public class NodeDetailPanel : UserControl
     public event Action<WorkflowNode>? NodeDuplicateRequested;
     public event Action<WorkflowNode>? NodeDisconnectRequested;
     public event Action<WorkflowNode, string, string>? SubWorkerTaskSendRequested;
+    public Func<WorkflowNode, bool>? IsFirstNodePredicate { get; set; }
+    public Func<(string Size, string Material, string Fixing)>? GetFirstNodeMaterialProvider { get; set; }
+    public Action<string, string, string>? FirstNodeMaterialChanged { get; set; }
 
     public NodeDetailPanel()
     {
@@ -715,6 +718,19 @@ public class NodeDetailPanel : UserControl
                 _txtAssignee.Text = node.Assignee;
                 _txtDetails.Text = node.Details;
                 _txtNextProcess.Text = node.NextProcess;
+                // 후속 노드 바인딩 시, 작업자가 별도로 수동 지정하지 않았고 비어있으면 첫 번째 노드의 소재 정보를 자동 계승
+                if (IsFirstNodePredicate?.Invoke(node) != true && !node.IsMaterialCustomized)
+                {
+                    var firstMat = GetFirstNodeMaterialProvider?.Invoke();
+                    if (firstMat.HasValue && (!string.IsNullOrEmpty(firstMat.Value.Size) || !string.IsNullOrEmpty(firstMat.Value.Material) || !string.IsNullOrEmpty(firstMat.Value.Fixing)))
+                    {
+                        if (string.IsNullOrEmpty(node.MaterialSize)) node.MaterialSize = firstMat.Value.Size;
+                        if (string.IsNullOrEmpty(node.MaterialType)) node.MaterialType = firstMat.Value.Material;
+                        if (string.IsNullOrEmpty(node.FixingMethod) || node.FixingMethod == "바이스") 
+                            node.FixingMethod = string.IsNullOrEmpty(firstMat.Value.Fixing) ? "바이스" : firstMat.Value.Fixing;
+                    }
+                }
+
                 _cboStartTime.Text = node.StartTime;
                 _cboEndTime.Text = node.EndTime;
                 _txtMaterialSize.Text = node.MaterialSize;
@@ -854,9 +870,9 @@ public class NodeDetailPanel : UserControl
             string details = _txtDetails.Text;
             string sTime = _cboStartTime?.Text.Trim() ?? "";
             string eTime = _cboEndTime?.Text.Trim() ?? "";
-            string mSize = _txtMaterialSize?.Text.Trim() ?? "";
-            string mType = _cboMaterialType?.Text.Trim() ?? "";
-            string fixMethod = _cboFixingMethod?.Text.Trim() ?? "";
+            string batchMSize = _txtMaterialSize?.Text.Trim() ?? "";
+            string batchMType = _cboMaterialType?.Text.Trim() ?? "";
+            string batchFixMethod = _cboFixingMethod?.Text.Trim() ?? "";
 
             foreach (var node in _currentNodes)
             {
@@ -865,9 +881,9 @@ public class NodeDetailPanel : UserControl
                 if (!string.IsNullOrWhiteSpace(details)) node.Details = details;
                 if (!string.IsNullOrWhiteSpace(sTime)) node.StartTime = sTime;
                 if (!string.IsNullOrWhiteSpace(eTime)) node.EndTime = eTime;
-                if (!string.IsNullOrWhiteSpace(mSize)) node.MaterialSize = mSize;
-                if (!string.IsNullOrWhiteSpace(mType)) node.MaterialType = mType;
-                if (!string.IsNullOrWhiteSpace(fixMethod)) node.FixingMethod = fixMethod;
+                if (!string.IsNullOrWhiteSpace(batchMSize)) node.MaterialSize = batchMSize;
+                if (!string.IsNullOrWhiteSpace(batchMType)) node.MaterialType = batchMType;
+                if (!string.IsNullOrWhiteSpace(batchFixMethod)) node.FixingMethod = batchFixMethod;
             }
 
             NodesUpdated?.Invoke(_currentNodes);
@@ -886,9 +902,38 @@ public class NodeDetailPanel : UserControl
         _currentNode.SubWorkerInstruction = _txtSubInstruction.Text.Trim();
         if (_cboStartTime != null) _currentNode.StartTime = _cboStartTime.Text.Trim();
         if (_cboEndTime != null) _currentNode.EndTime = _cboEndTime.Text.Trim();
-        if (_txtMaterialSize != null) _currentNode.MaterialSize = _txtMaterialSize.Text.Trim();
-        if (_cboMaterialType != null) _currentNode.MaterialType = _cboMaterialType.Text.Trim();
-        if (_cboFixingMethod != null) _currentNode.FixingMethod = _cboFixingMethod.Text.Trim();
+
+        string mSize = _txtMaterialSize?.Text.Trim() ?? "";
+        string mType = _cboMaterialType?.Text.Trim() ?? "";
+        string fixMethod = _cboFixingMethod?.Text.Trim() ?? "";
+
+        bool isFirst = IsFirstNodePredicate?.Invoke(_currentNode) == true;
+        if (isFirst)
+        {
+            bool matChanged = _currentNode.MaterialSize != mSize || _currentNode.MaterialType != mType || _currentNode.FixingMethod != fixMethod;
+            _currentNode.MaterialSize = mSize;
+            _currentNode.MaterialType = mType;
+            _currentNode.FixingMethod = fixMethod;
+
+            if (matChanged && (!string.IsNullOrEmpty(mSize) || !string.IsNullOrEmpty(mType) || !string.IsNullOrEmpty(fixMethod)))
+            {
+                FirstNodeMaterialChanged?.Invoke(mSize, mType, fixMethod);
+            }
+        }
+        else
+        {
+            var firstMat = GetFirstNodeMaterialProvider?.Invoke();
+            if (firstMat.HasValue && (!string.IsNullOrEmpty(firstMat.Value.Size) || !string.IsNullOrEmpty(firstMat.Value.Material) || !string.IsNullOrEmpty(firstMat.Value.Fixing)))
+            {
+                if (mSize != firstMat.Value.Size || mType != firstMat.Value.Material || fixMethod != firstMat.Value.Fixing)
+                {
+                    _currentNode.IsMaterialCustomized = true;
+                }
+            }
+            _currentNode.MaterialSize = mSize;
+            _currentNode.MaterialType = mType;
+            _currentNode.FixingMethod = fixMethod;
+        }
 
         NodeUpdated?.Invoke(_currentNode);
     }
