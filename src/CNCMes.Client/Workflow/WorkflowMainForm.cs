@@ -111,7 +111,7 @@ public class WorkflowMainForm : Form
 
     private void InitializeUI()
     {
-        Text = $"CNC-MES 스마트 현장 터미널 v1.5.1 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
+        Text = $"CNC-MES 스마트 현장 터미널 v1.5.2 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
         Size = new Size(1600, 960);
         MinimumSize = new Size(1280, 720);
         StartPosition = FormStartPosition.CenterScreen;
@@ -220,7 +220,7 @@ public class WorkflowMainForm : Form
         pnlBrand.Controls.Add(pnlIcon);
 
         var lblBrand = new Label { Text = "CNC-MES", Location = new Point(44, 8), Font = new Font("맑은 고딕", 12f, FontStyle.Bold), ForeColor = Color.White, AutoSize = true };
-        var lblVer = new Label { Text = "v1.5.1 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
+        var lblVer = new Label { Text = "v1.5.2 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
         var lblStatus = new Label { Text = "● 서버 정상", Location = new Point(245, 11), Font = new Font("맑은 고딕", 8f, FontStyle.Bold), ForeColor = Palette.Green, BackColor = Color.FromArgb(80, 6, 78, 59), AutoSize = true, Padding = new Padding(5, 1, 5, 1) };
         var lblSub = new Label { Text = "WORKFLOW-BASED OPERATOR CONTROL SYSTEM", Location = new Point(45, 30), Font = new Font("Consolas", 7.2f), ForeColor = Palette.TextSlate400, AutoSize = true };
         pnlBrand.Controls.AddRange(new Control[] { lblBrand, lblVer, lblStatus, lblSub });
@@ -1708,39 +1708,109 @@ public class WorkflowMainForm : Form
     private void OpenLoadTemplateDialog()
     {
         using var dlg = new TemplateLoadDialog();
-        if (dlg.ShowDialog(this) == DialogResult.OK && dlg.SelectedTemplate != null)
+        if (dlg.ShowDialog(this) == DialogResult.OK && dlg.SelectedTemplates.Count > 0)
         {
-            var t = dlg.SelectedTemplate;
+            var templates = dlg.SelectedTemplates;
+            bool append = dlg.IsAppendMode;
+
             string orderNo = "WO-2026-001";
             if (_cboOrders.SelectedIndex >= 0 && _cboOrders.SelectedIndex < _cachedOrders.Count)
             {
                 orderNo = _cachedOrders[_cboOrders.SelectedIndex].GetProperty("orderNumber").GetString() ?? "WO-2026-001";
             }
-            string partName = _lstParts.SelectedItem?.ToString() ?? t.Name;
+            string basePartName = _lstParts.SelectedItem?.ToString() ?? "";
 
-            var (newNodes, newEdges, newBoxes) = TemplateManager.InstantiateTemplate(t, orderNo, partName);
+            // 새로 대체 모드이고 기존 노드가 있으면 확인
+            if (!append && _canvas.Nodes.Count > 0)
+            {
+                var dr = MessageBox.Show(
+                    "기존 캔버스의 모든 공정 노드를 지우고 새로 불러오시겠습니까?\r\n\r\n(기존 공정을 유지한 채 함께 배치하려면 '아니요'를 누른 후 '기존 화면에 추가'를 클릭하세요)",
+                    "캔버스 대체 확인",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question);
 
-            _canvas.Clear();
-            ResetWorkflowConfirmation();
+                if (dr != DialogResult.Yes) return;
 
-            _canvas.Nodes.AddRange(newNodes);
-            _canvas.Edges.AddRange(newEdges);
-            _canvas.TitleBoxes.AddRange(newBoxes);
-            _canvas.ArrangeByTimeline();
+                _canvas.Clear();
+                ResetWorkflowConfirmation();
+            }
 
-            _canvas.SelectedNode = _canvas.Nodes.FirstOrDefault();
+            // 테마 색상 팔레트 (템플릿별로 색상 구분)
+            string[] boxColors = { "#0284c7", "#10b981", "#f59e0b", "#a855f7", "#ec4899", "#3b82f6" };
+            int colorIdx = _canvas.TitleBoxes.Count % boxColors.Length;
+
+            int addedTemplateCount = 0;
+            int totalAddedNodes = 0;
+
+            foreach (var t in templates)
+            {
+                string partName = string.IsNullOrEmpty(basePartName) ? t.Name : basePartName;
+                var (newNodes, newEdges, newBoxes) = TemplateManager.InstantiateTemplate(t, orderNo, partName);
+
+                if (newNodes.Count == 0) continue;
+
+                // 캔버스에 기존 노드가 이미 있다면, 겹치지 않도록 Y축 아래로 오프셋 이동
+                if (_canvas.Nodes.Count > 0)
+                {
+                    float currentMaxY = _canvas.Nodes.Max(n => n.Y + n.Height);
+                    float minNewY = newNodes.Min(n => n.Y);
+                    float offsetY = (currentMaxY + 80f) - minNewY;
+
+                    foreach (var n in newNodes)
+                    {
+                        n.Y += offsetY;
+                    }
+                    foreach (var b in newBoxes)
+                    {
+                        b.Y += offsetY;
+                    }
+                }
+
+                // 템플릿별 타이틀 그룹 박스가 없으면 해당 템플릿을 감싸는 타이틀 박스 자동 생성
+                if (newBoxes.Count == 0)
+                {
+                    float minX = newNodes.Min(n => n.X) - 30;
+                    float minY = newNodes.Min(n => n.Y) - 50;
+                    float maxX = newNodes.Max(n => n.X + n.Width) + 30;
+                    float maxY = newNodes.Max(n => n.Y + n.Height) + 30;
+
+                    var box = new WorkflowTitleBox
+                    {
+                        Title = $"{t.Name} ({t.TargetMaterial})",
+                        ColorHex = boxColors[colorIdx % boxColors.Length],
+                        X = Math.Max(20, minX),
+                        Y = Math.Max(20, minY),
+                        Width = Math.Max(240, maxX - minX),
+                        Height = Math.Max(140, maxY - minY)
+                    };
+                    newBoxes.Add(box);
+                }
+
+                _canvas.Nodes.AddRange(newNodes);
+                _canvas.Edges.AddRange(newEdges);
+                _canvas.TitleBoxes.AddRange(newBoxes);
+
+                addedTemplateCount++;
+                totalAddedNodes += newNodes.Count;
+                colorIdx++;
+            }
+
+            _canvas.ArrangeByTimeline(autoFitBaseHour: false);
+
+            _canvas.SelectedNode = _canvas.Nodes.LastOrDefault();
             if (_canvas.SelectedNode != null)
             {
                 _detailPanel.BindNode(_canvas.SelectedNode);
             }
 
+            _canvas.ResetView();
             UpdateWorkflowStats();
             AutoSaveWorkflow();
 
-            MessageBox.Show($"'{t.Name}' ({newNodes.Count}개 공정) 템플릿이 캔버스에 적용되었습니다.", "템플릿 적용 완료", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            string modeDesc = append ? "기존 캔버스에 추가 배치" : "캔버스에 새로 적용";
+            MessageBox.Show($"[템플릿 불러오기 완료]\r\n불러온 템플릿: {addedTemplateCount}개\r\n총 추가 공정 수: {totalAddedNodes}개\r\n방식: {modeDesc}\r\n\r\n각 템플릿은 타이틀 그룹 박스로 묶여 있어 박스 헤더를 잡고 원하는 위치로 자유롭게 이동할 수 있습니다.", "템플릿 불러오기 성공", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
     }
-
     public void ApplyProbecardTemplate(string? rawPartName = null)
     {
         string orderNo = "WO-2026-001";
