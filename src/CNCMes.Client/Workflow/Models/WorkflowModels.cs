@@ -88,6 +88,27 @@ public class WorkflowNode
 
     public PointF InputAnchor => new(X, Y + Height / 2f);
     public PointF OutputAnchor => new(X + Width, Y + Height / 2f);
+    public PointF TopAnchor => new(X + Width / 2f, Y);
+    public PointF BottomAnchor => new(X + Width / 2f, Y + Height);
+
+    [JsonIgnore]
+    public PointF[] AllAnchors => new[] { InputAnchor, OutputAnchor, TopAnchor, BottomAnchor };
+
+    public PointF GetClosestAnchor(PointF target)
+    {
+        PointF closest = OutputAnchor;
+        float minD = float.MaxValue;
+        foreach (var a in AllAnchors)
+        {
+            float d = (a.X - target.X) * (a.X - target.X) + (a.Y - target.Y) * (a.Y - target.Y);
+            if (d < minD)
+            {
+                minD = d;
+                closest = a;
+            }
+        }
+        return closest;
+    }
 }
 
 public class WorkflowEdge

@@ -716,7 +716,7 @@ public class WorkflowCanvasControl : UserControl
         g.ScaleTransform(_zoom, _zoom);
 
         DrawGrid(g);
-        if (ShowTimelineGuides) DrawTimelineGuides(g);
+        if (ShowTimelineGuides) DrawTimelineGridLines(g);
         DrawTitleBoxes(g);
         DrawEdges(g);
         DrawConnectingLine(g);
@@ -734,6 +734,7 @@ public class WorkflowCanvasControl : UserControl
         DrawConfirmedBadgeOverlay(g);
         DrawHudOverlay(g);
         DrawMarqueeSelectionOverlay(g);
+        if (ShowTimelineGuides) DrawTimelineRulerHeader(g);
     }
 
     private void DrawEmptyCanvasGuide(Graphics g)
@@ -794,7 +795,7 @@ public class WorkflowCanvasControl : UserControl
         DrawRoundedRectangle(g, closeBg, closeBorder, _emptyCloseButtonBottomRect, 6f);
         g.DrawString("✕ 닫기", fontBtn, Brushes.White, _emptyCloseButtonBottomRect, sfCenter);
     }
-    private void DrawTimelineGuides(Graphics g)
+    private void DrawTimelineGridLines(Graphics g)
     {
         if (Nodes.Count == 0 && TitleBoxes.Count == 0) return;
 
@@ -807,17 +808,8 @@ public class WorkflowCanvasControl : UserControl
         float worldLeft = -_panOffset.X / _zoom;
         float worldRight = worldLeft + Width / _zoom;
 
-        float rulerY = Math.Max(worldTop + 4f, 15f);
-
-        using var fontHour = new Font("Consolas", 8.2f, FontStyle.Bold);
-        using var fontHalf = new Font("Consolas", 7.2f);
-        using var fontNow = new Font("맑은 고딕", 7.5f, FontStyle.Bold);
-        using var linePenHour = new Pen(Color.FromArgb(45, 56, 189, 248), 1f) { DashStyle = DashStyle.Dash };
-        using var linePenHalf = new Pen(Color.FromArgb(18, 56, 189, 248), 1f) { DashStyle = DashStyle.Dot };
-        using var rulerBg = new SolidBrush(Color.FromArgb(235, 15, 23, 42));
-        using var rulerBorder = new Pen(Color.FromArgb(80, 56, 189, 248), 1f);
-        using var textSky = new SolidBrush(Color.FromArgb(56, 189, 248));
-        using var textSlate = new SolidBrush(Color.FromArgb(148, 163, 184));
+        using var linePenHour = new Pen(Color.FromArgb(40, 56, 189, 248), 1f) { DashStyle = DashStyle.Dash };
+        using var linePenHalf = new Pen(Color.FromArgb(16, 56, 189, 248), 1f) { DashStyle = DashStyle.Dot };
 
         int minH = (int)Math.Floor(baseTime + (worldLeft - startX - 100f) / pixelsPerHour);
         int maxH = (int)Math.Ceiling(baseTime + (worldRight - startX + 100f) / pixelsPerHour);
@@ -829,44 +821,96 @@ public class WorkflowCanvasControl : UserControl
             float hourX = startX + (float)((h - baseTime) * pixelsPerHour);
             float halfX = hourX + (0.5f * pixelsPerHour);
 
-            int displayHour = h % 24;
-            string daySuffix = h >= 24 ? " (+1일)" : "";
-
-            // Hour Line & Top Badge
             if (hourX >= worldLeft - 60 && hourX <= worldRight + 60)
             {
                 g.DrawLine(linePenHour, hourX, worldTop, hourX, worldBottom);
-
-                var badgeRect = new RectangleF(hourX - 32f, rulerY, 64f, 20f);
-                DrawRoundedRectangle(g, rulerBg, rulerBorder, badgeRect, 4f);
-                var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-                g.DrawString($"{displayHour:D2}:00{daySuffix}", fontHour, textSky, badgeRect, sf);
             }
 
-            // Half-hour Line
             if (halfX >= worldLeft - 60 && halfX <= worldRight + 60)
             {
                 g.DrawLine(linePenHalf, halfX, worldTop, halfX, worldBottom);
-
-                var halfBadgeRect = new RectangleF(halfX - 18f, rulerY + 3f, 36f, 15f);
-                var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-                g.DrawString($":30", fontHalf, textSlate, halfBadgeRect, sf);
             }
         }
 
-        // 현재 시간 실시간 인디케이터 라인 (NOW Guide Line)
+        // NOW Guide Line (world space)
         DateTime now = DateTime.Now;
         double nowHour = now.Hour + (now.Minute / 60.0);
         float nowX = startX + (float)((nowHour - baseTime) * pixelsPerHour);
         if (nowX >= worldLeft - 60 && nowX <= worldRight + 60)
         {
             using var penNow = new Pen(Color.FromArgb(239, 68, 68), 1.5f) { DashStyle = DashStyle.DashDot };
-            using var brushNowBg = new SolidBrush(Color.FromArgb(220, 239, 68, 68));
-            using var sfCenter = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-
             g.DrawLine(penNow, nowX, worldTop, nowX, worldBottom);
+        }
+    }
 
-            var nowBadgeRect = new RectangleF(nowX - 42f, rulerY + 22f, 84f, 18f);
+    private void DrawTimelineRulerHeader(Graphics g)
+    {
+        if (Nodes.Count == 0 && TitleBoxes.Count == 0) return;
+
+        double baseTime = GetEffectiveTimelineBaseHour();
+        float startX = 60f;
+        float pixelsPerHour = PixelsPerHour;
+
+        using var rulerBg = new SolidBrush(Color.FromArgb(245, 15, 23, 42));
+        using var rulerBorder = new Pen(Color.FromArgb(80, 56, 189, 248), 1.2f);
+        using var badgeBg = new SolidBrush(Color.FromArgb(240, 30, 41, 59));
+        using var textSky = new SolidBrush(Color.FromArgb(56, 189, 248));
+        using var textSlate = new SolidBrush(Color.FromArgb(148, 163, 184));
+        using var fontHour = new Font("Consolas", 8.2f, FontStyle.Bold);
+        using var fontHalf = new Font("Consolas", 7.2f);
+        using var fontNow = new Font("맑은 고딕", 7.5f, FontStyle.Bold);
+        using var fontGrip = new Font("맑은 고딕", 7.5f, FontStyle.Bold);
+
+        // Fixed Top Header Strip in Screen Space
+        g.FillRectangle(rulerBg, 0, 0, Width, 36);
+        g.DrawLine(rulerBorder, 0, 36, Width, 36);
+
+        using var sfLeft = new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center };
+        g.DrawString("⏱ 타임라인 (좌우 드래그: 간격조절 ↔)", fontGrip, textSlate, new RectangleF(10, 0, 230, 36), sfLeft);
+
+        float worldLeft = -_panOffset.X / _zoom;
+        float worldRight = worldLeft + Width / _zoom;
+
+        int minH = (int)Math.Floor(baseTime + (worldLeft - startX - 100f) / pixelsPerHour);
+        int maxH = (int)Math.Ceiling(baseTime + (worldRight - startX + 100f) / pixelsPerHour);
+        minH = Math.Max(0, minH);
+        maxH = Math.Min(48, maxH);
+
+        using var sfCenter = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+
+        for (int h = minH; h <= maxH; h++)
+        {
+            float hourX = startX + (float)((h - baseTime) * pixelsPerHour);
+            float screenX = hourX * _zoom + _panOffset.X;
+
+            if (screenX >= -60 && screenX <= Width + 60)
+            {
+                int displayHour = h % 24;
+                string daySuffix = h >= 24 ? " (+1일)" : "";
+                var badgeRect = new RectangleF(screenX - 30f, 6f, 60f, 22f);
+                DrawRoundedRectangle(g, badgeBg, rulerBorder, badgeRect, 4f);
+                g.DrawString($"{displayHour:D2}:00{daySuffix}", fontHour, textSky, badgeRect, sfCenter);
+            }
+
+            float halfX = hourX + (0.5f * pixelsPerHour);
+            float halfScreenX = halfX * _zoom + _panOffset.X;
+            if (halfScreenX >= -40 && halfScreenX <= Width + 40)
+            {
+                var halfBadgeRect = new RectangleF(halfScreenX - 16f, 10f, 32f, 16f);
+                g.DrawString(":30", fontHalf, textSlate, halfBadgeRect, sfCenter);
+            }
+        }
+
+        // NOW Indicator in Screen Space
+        DateTime now = DateTime.Now;
+        double nowHour = now.Hour + (now.Minute / 60.0);
+        float nowX = startX + (float)((nowHour - baseTime) * pixelsPerHour);
+        float nowScreenX = nowX * _zoom + _panOffset.X;
+        if (nowScreenX >= -50 && nowScreenX <= Width + 50)
+        {
+            using var penNow = new Pen(Color.FromArgb(239, 68, 68), 1.5f);
+            using var brushNowBg = new SolidBrush(Color.FromArgb(220, 239, 68, 68));
+            var nowBadgeRect = new RectangleF(nowScreenX - 38f, 7f, 76f, 20f);
             DrawRoundedRectangle(g, brushNowBg, penNow, nowBadgeRect, 3f);
             g.DrawString($"NOW {now:HH:mm}", fontNow, Brushes.White, nowBadgeRect, sfCenter);
         }
@@ -966,6 +1010,47 @@ public class WorkflowCanvasControl : UserControl
         }
     }
 
+    public static (PointF p1, PointF c1, PointF c2, PointF p2) GetEdgeCurvePoints(WorkflowNode from, WorkflowNode to)
+    {
+        float dx = (to.X + to.Width / 2f) - (from.X + from.Width / 2f);
+        float dy = (to.Y + to.Height / 2f) - (from.Y + from.Height / 2f);
+
+        if (Math.Abs(dy) > Math.Abs(dx) * 1.15f)
+        {
+            if (dy > 0)
+            {
+                PointF p1 = from.BottomAnchor;
+                PointF p2 = to.TopAnchor;
+                float dist = Math.Max(35f, (p2.Y - p1.Y) * 0.45f);
+                return (p1, new PointF(p1.X, p1.Y + dist), new PointF(p2.X, p2.Y - dist), p2);
+            }
+            else
+            {
+                PointF p1 = from.TopAnchor;
+                PointF p2 = to.BottomAnchor;
+                float dist = Math.Max(35f, (p1.Y - p2.Y) * 0.45f);
+                return (p1, new PointF(p1.X, p1.Y - dist), new PointF(p2.X, p2.Y + dist), p2);
+            }
+        }
+        else
+        {
+            if (dx >= 0)
+            {
+                PointF p1 = from.OutputAnchor;
+                PointF p2 = to.InputAnchor;
+                float dist = Math.Max(45f, (p2.X - p1.X) * 0.5f);
+                return (p1, new PointF(p1.X + dist, p1.Y), new PointF(p2.X - dist, p2.Y), p2);
+            }
+            else
+            {
+                PointF p1 = from.InputAnchor;
+                PointF p2 = to.OutputAnchor;
+                float dist = Math.Max(45f, (p1.X - p2.X) * 0.5f);
+                return (p1, new PointF(p1.X - dist, p1.Y), new PointF(p2.X + dist, p2.Y), p2);
+            }
+        }
+    }
+
     private void DrawEdges(Graphics g)
     {
         var nodeMap = Nodes.ToDictionary(n => n.Id, n => n);
@@ -977,14 +1062,7 @@ public class WorkflowCanvasControl : UserControl
                 !nodeMap.TryGetValue(edge.ToNodeId, out var toNode))
                 continue;
 
-            PointF p1 = fromNode.OutputAnchor;
-            PointF p2 = toNode.InputAnchor;
-
-            float dx = Math.Abs(p2.X - p1.X) * 0.5f;
-            float ctrlDist = Math.Max(50f, dx);
-
-            PointF c1 = new(p1.X + ctrlDist, p1.Y);
-            PointF c2 = new(p2.X - ctrlDist, p2.Y);
+            var (p1, c1, c2, p2) = GetEdgeCurvePoints(fromNode, toNode);
 
             Color edgeColor;
             float edgeWidth;
@@ -1113,7 +1191,7 @@ public class WorkflowCanvasControl : UserControl
     {
         if (_connectingFromNode == null) return;
 
-        PointF p1 = _connectingFromNode.OutputAnchor;
+        PointF p1 = _connectingFromNode.GetClosestAnchor(_currentConnectingPoint);
         PointF p2 = _currentConnectingPoint;
 
         using var pen = new Pen(Palette.CatPrep, 2f) { DashStyle = DashStyle.Dash };
@@ -1332,9 +1410,11 @@ public class WorkflowCanvasControl : UserControl
             }
         }
 
-        // Input & Output Anchors (Connection Handles)
+        // Connection Anchors: Left(Input), Right(Output), Top, Bottom
         DrawAnchor(g, node.InputAnchor, false);
         DrawAnchor(g, node.OutputAnchor, true);
+        DrawAnchor(g, node.TopAnchor, false);
+        DrawAnchor(g, node.BottomAnchor, false);
     }
 
     private void DrawAnchor(Graphics g, PointF pt, bool isOutput)
@@ -1505,9 +1585,10 @@ public class WorkflowCanvasControl : UserControl
 
         _mouseDownLocation = e.Location;
 
-        // 눈금자 영역(상단 35px) 클릭 시 마우스 좌우 드래그로 타임라인 간격 실시간 조절 시작
-        if (ShowTimelineGuides && e.Button == MouseButtons.Left && e.Y <= 35)
+        // 눈금자 영역(상단 42px) 클릭 시 마우스 좌우 드래그로 타임라인 간격 실시간 조절 시작
+        if (ShowTimelineGuides && e.Button == MouseButtons.Left && e.Y <= 42)
         {
+            Capture = true;
             _isDraggingTimelineRuler = true;
             _timelineDragStartMouse = e.Location;
             _timelineDragStartPixelsPerHour = PixelsPerHour;
@@ -1550,10 +1631,13 @@ public class WorkflowCanvasControl : UserControl
         {
             var worldPt = ScreenToWorld(e.Location);
 
-            // 1. Check if clicking output anchor of any node to start edge creation
+            // 1. Check if clicking any anchor port (Left, Right, Top, Bottom) of any node to start edge creation
             foreach (var node in Nodes.AsEnumerable().Reverse())
             {
-                if (IsPointNear(worldPt, node.OutputAnchor, 14f))
+                if (IsPointNear(worldPt, node.OutputAnchor, 14f) ||
+                    IsPointNear(worldPt, node.TopAnchor, 14f) ||
+                    IsPointNear(worldPt, node.BottomAnchor, 14f) ||
+                    IsPointNear(worldPt, node.InputAnchor, 14f))
                 {
                     _connectingFromNode = node;
                     _currentConnectingPoint = worldPt;
@@ -1700,7 +1784,7 @@ public class WorkflowCanvasControl : UserControl
         }
 
         // 눈금자 영역에 마우스 올렸을 때 SizeWE(좌우 화살표) 커서 표시
-        if (ShowTimelineGuides && e.Y <= 35 && !_isPanning && _draggedNodes.Count == 0 && !_isBoxSelecting)
+        if (ShowTimelineGuides && e.Y <= 42 && !_isPanning && _draggedNodes.Count == 0 && !_isBoxSelecting)
         {
             Cursor = Cursors.SizeWE;
             return;
@@ -1818,7 +1902,11 @@ public class WorkflowCanvasControl : UserControl
             return;
         }
 
-        bool nearPort = Nodes.Any(n => IsPointNear(worldPt, n.OutputAnchor, 10f) || IsPointNear(worldPt, n.InputAnchor, 10f));
+        bool nearPort = Nodes.Any(n => 
+            IsPointNear(worldPt, n.OutputAnchor, 12f) || 
+            IsPointNear(worldPt, n.InputAnchor, 12f) ||
+            IsPointNear(worldPt, n.TopAnchor, 12f) ||
+            IsPointNear(worldPt, n.BottomAnchor, 12f));
         bool overIssueBadge = Nodes.Any(n => {
             var b = GetIssueBadgeBounds(n);
             return !b.IsEmpty && b.Contains(worldPt);
@@ -1862,6 +1950,7 @@ public class WorkflowCanvasControl : UserControl
             if (_isDraggingTimelineRuler)
             {
                 _isDraggingTimelineRuler = false;
+                Capture = false;
                 Cursor = Cursors.Default;
                 WorkflowChanged?.Invoke();
                 return;
@@ -1870,7 +1959,12 @@ public class WorkflowCanvasControl : UserControl
             if (_connectingFromNode != null)
             {
                 var worldPt = ScreenToWorld(e.Location);
-                var targetNode = Nodes.FirstOrDefault(n => IsPointNear(worldPt, n.InputAnchor, 16f) || n.Bounds.Contains(worldPt));
+                var targetNode = Nodes.FirstOrDefault(n => 
+                    IsPointNear(worldPt, n.InputAnchor, 16f) || 
+                    IsPointNear(worldPt, n.TopAnchor, 16f) || 
+                    IsPointNear(worldPt, n.BottomAnchor, 16f) || 
+                    IsPointNear(worldPt, n.OutputAnchor, 16f) || 
+                    n.Bounds.Contains(worldPt));
                 
                 if (targetNode != null && targetNode != _connectingFromNode)
                 {
@@ -2075,12 +2169,7 @@ public class WorkflowCanvasControl : UserControl
                 !nodeMap.TryGetValue(edge.ToNodeId, out var toNode))
                 continue;
 
-            PointF p1 = fromNode.OutputAnchor;
-            PointF p2 = toNode.InputAnchor;
-            float dx = Math.Abs(p2.X - p1.X) * 0.5f;
-            float ctrlDist = Math.Max(50f, dx);
-            PointF c1 = new(p1.X + ctrlDist, p1.Y);
-            PointF c2 = new(p2.X - ctrlDist, p2.Y);
+            var (p1, c1, c2, p2) = GetEdgeCurvePoints(fromNode, toNode);
 
             // Test points along the Bezier curve
             for (float t = 0f; t <= 1.0f; t += 0.05f)

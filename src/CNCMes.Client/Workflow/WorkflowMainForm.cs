@@ -47,6 +47,17 @@ public class WorkflowMainForm : Form
     private readonly HashSet<string> _knownNoticeTitles = new();
     private readonly HashSet<string> _knownChatSignatures = new();
     private bool _isInitialDataLoaded = false;
+
+    // Dedicated Fast Chat Polling Timer & Diff Caches (Anti-flicker)
+    private System.Windows.Forms.Timer _chatPollTimer = null!;
+    private string _lastMachineSummary = "";
+    private string _lastOrdersSummary = "";
+    private string _lastNoticesSummary = "";
+    private string _lastHistorySummary = "";
+    private string _lastDefectsSummary = "";
+    private string _lastSubTasksSummary = "";
+    private string _lastPostProcessSummary = "";
+    private string _lastChatSummary = "";
     private Button _btnOpenNoticesTop = null!;
     private Label _lblAutoSaveBadge = null!;
     private Label _lblTopNoticeBanner = null!;
@@ -120,7 +131,7 @@ public class WorkflowMainForm : Form
 
     private void InitializeUI()
     {
-        Text = $"CNC-MES 스마트 현장 터미널 v1.5.3 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
+        Text = $"CNC-MES 스마트 현장 터미널 v1.5.4 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
         Size = new Size(1600, 960);
         MinimumSize = new Size(1280, 720);
         StartPosition = FormStartPosition.CenterScreen;
@@ -171,6 +182,13 @@ public class WorkflowMainForm : Form
 
         _pollTimer = new System.Windows.Forms.Timer { Interval = 5000 };
         _pollTimer.Tick += async (s, e) => await PollRealtimeDataAsync();
+
+        // 2초 전용 고속 채팅 폴링 타이머 (메시지 입력 없이도 가공자 채팅 실시간 수신)
+        _chatPollTimer = new System.Windows.Forms.Timer { Interval = 2000 };
+        _chatPollTimer.Tick += async (s, e) => await PollChatDirectAsync();
+        _chatPollTimer.Start();
+
+        EnableDoubleBuffering(this);
 
         Shown += async (s, e) => await OnFormShownAsync();
     }
@@ -233,7 +251,7 @@ public class WorkflowMainForm : Form
         pnlBrand.Controls.Add(pnlIcon);
 
         var lblBrand = new Label { Text = "CNC-MES", Location = new Point(44, 8), Font = new Font("맑은 고딕", 12f, FontStyle.Bold), ForeColor = Color.White, AutoSize = true };
-        var lblVer = new Label { Text = "v1.5.3 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
+        var lblVer = new Label { Text = "v1.5.4 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
         var lblStatus = new Label { Text = "● 서버 정상", Location = new Point(245, 11), Font = new Font("맑은 고딕", 8f, FontStyle.Bold), ForeColor = Palette.Green, BackColor = Color.FromArgb(80, 6, 78, 59), AutoSize = true, Padding = new Padding(5, 1, 5, 1) };
         var lblSub = new Label { Text = "WORKFLOW-BASED OPERATOR CONTROL SYSTEM", Location = new Point(45, 30), Font = new Font("Consolas", 7.2f), ForeColor = Palette.TextSlate400, AutoSize = true };
         pnlBrand.Controls.AddRange(new Control[] { lblBrand, lblVer, lblStatus, lblSub });
@@ -426,6 +444,27 @@ public class WorkflowMainForm : Form
             return true;
         }
         return base.ProcessCmdKey(ref msg, keyData);
+    }
+
+
+    private static void EnableDoubleBuffering(Control c)
+    {
+        try
+        {
+            typeof(Control).GetProperty("DoubleBuffered", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                ?.SetValue(c, true);
+            foreach (Control child in c.Controls) EnableDoubleBuffering(child);
+        }
+        catch { }
+    }
+
+    private async Task PollChatDirectAsync()
+    {
+        try
+        {
+            await LoadChatAsync();
+        }
+        catch { }
     }
 
     private Control BuildLeftSidebar()
@@ -1166,8 +1205,21 @@ public class WorkflowMainForm : Form
             var list = await _api.GetMachinesAsync();
             if (list != null && list.Count > 0)
             {
-                _cachedMachines = list;
-                RenderLeftMachineCards();
+                var sb = new System.Text.StringBuilder();
+                foreach (var m in list)
+                {
+                    string id = m.GetProperty("machineId").GetString() ?? "";
+                    string status = m.GetProperty("status").GetString() ?? "대기";
+                    string jobNo = m.TryGetProperty("activeJobNumber", out var jn) && jn.ValueKind == JsonValueKind.String ? jn.GetString() : "-";
+                    sb.Append(id).Append(':').Append(status).Append(':').Append(jobNo).Append(';');
+                }
+                string newSummary = sb.ToString();
+                if (newSummary != _lastMachineSummary)
+                {
+                    _lastMachineSummary = newSummary;
+                    _cachedMachines = list;
+                    RenderLeftMachineCards();
+                }
             }
         }
         catch { }
@@ -1243,45 +1295,55 @@ public class WorkflowMainForm : Form
             var list = await _api.GetWorkOrdersAsync();
             if (list != null && list.Count > 0)
             {
-                _cachedOrders = list;
-                _cboOrders.Items.Clear();
-                foreach (var o in _cachedOrders)
+                var sb = new System.Text.StringBuilder();
+                foreach (var o in list)
                 {
                     string orderNo = o.GetProperty("orderNumber").GetString() ?? "";
-                    string customer = o.TryGetProperty("customerName", out var cn) ? cn.GetString() ?? "" : "";
-                    string status = o.TryGetProperty("status", out var st) ? st.GetString() ?? "" : "대기";
-                    _cboOrders.Items.Add($"[{orderNo}] {customer} ({status})");
+                    string status = o.TryGetProperty("status", out var st) ? st.GetString() ?? "" : "";
+                    sb.Append(orderNo).Append(':').Append(status).Append(';');
 
                     if (_isInitialDataLoaded && !string.IsNullOrEmpty(orderNo) && !_knownWorkOrderNumbers.Contains(orderNo))
                     {
+                        string customer = o.TryGetProperty("customerName", out var cn) ? cn.GetString() ?? "" : "";
                         string custText = string.IsNullOrEmpty(customer) ? "" : $" ({customer})";
                         ToastNotificationForm.ShowToast(
                             "📋 신규 작업지시서 등록",
                             $"새 작업지시서 [{orderNo}]{custText} 등록되었습니다.",
                             ToastType.WorkOrder,
                             () => {
-                                if (_cboOrders != null && !_cboOrders.IsDisposed)
-                                {
-                                    _cboOrders.Focus();
-                                }
+                                if (_cboOrders != null && !_cboOrders.IsDisposed) _cboOrders.Focus();
                             }
                         );
                     }
-                    if (!string.IsNullOrEmpty(orderNo))
-                    {
-                        _knownWorkOrderNumbers.Add(orderNo);
-                    }
+                    if (!string.IsNullOrEmpty(orderNo)) _knownWorkOrderNumbers.Add(orderNo);
                 }
-                if (_cboOrders.Items.Count > 0 && _cboOrders.SelectedIndex < 0)
+
+                string newSummary = sb.ToString();
+                if (newSummary != _lastOrdersSummary)
                 {
-                    _cboOrders.SelectedIndex = 0;
+                    _lastOrdersSummary = newSummary;
+                    _cachedOrders = list;
+                    int prevIdx = _cboOrders.SelectedIndex;
+                    _cboOrders.BeginUpdate();
+                    _cboOrders.Items.Clear();
+                    foreach (var o in _cachedOrders)
+                    {
+                        string orderNo = o.GetProperty("orderNumber").GetString() ?? "";
+                        string customer = o.TryGetProperty("customerName", out var cn) ? cn.GetString() ?? "" : "";
+                        string status = o.TryGetProperty("status", out var st) ? st.GetString() ?? "" : "대기";
+                        _cboOrders.Items.Add($"[{orderNo}] {customer} ({status})");
+                    }
+                    if (_cboOrders.Items.Count > 0)
+                    {
+                        _cboOrders.SelectedIndex = (prevIdx >= 0 && prevIdx < _cboOrders.Items.Count) ? prevIdx : 0;
+                    }
+                    _cboOrders.EndUpdate();
                 }
             }
         }
         catch { }
 
-        // If no orders returned or offline, populate default demo work orders including 프로브카드
-        if (_cboOrders.Items.Count == 0)
+        if (_cboOrders.Items.Count == 0 && string.IsNullOrEmpty(_lastOrdersSummary))
         {
             PopulateFallbackOrders();
         }
@@ -2850,19 +2912,34 @@ public class WorkflowMainForm : Form
             var logs = await _api.GetMachineWorkLogsAsync(limit: 50);
             if (logs != null)
             {
-                _gridHistory.Rows.Clear();
-                foreach (var log in logs)
+                var sbL = new System.Text.StringBuilder();
+                foreach (var l in logs)
                 {
-                    string time = log.TryGetProperty("timestamp", out var t) ? t.GetString() ?? "" : "";
-                    if (DateTime.TryParse(time, out var dt)) time = dt.ToString("MM-dd HH:mm");
-                    string mach = log.TryGetProperty("machineId", out var m) ? m.GetString() ?? "" : "";
-                    string order = log.TryGetProperty("orderNumber", out var o) ? o.GetString() ?? "" : "";
-                    string part = log.TryGetProperty("partName", out var p) ? p.GetString() ?? "" : "";
-                    string detail = log.TryGetProperty("workDetail", out var d) ? d.GetString() ?? "" : "";
-                    string worker = log.TryGetProperty("workerName", out var w) ? w.GetString() ?? "" : "";
-                    string status = log.TryGetProperty("status", out var s) ? s.GetString() ?? "" : "";
+                    string lid = l.TryGetProperty("id", out var i) ? i.ToString() : "";
+                    string ltm = l.TryGetProperty("timestamp", out var t) ? t.GetString() ?? "" : "";
+                    string lst = l.TryGetProperty("status", out var s) ? s.GetString() ?? "" : "";
+                    sbL.Append(lid).Append(':').Append(ltm).Append(':').Append(lst).Append(';');
+                }
+                string summary = sbL.ToString();
+                if (summary != _lastHistorySummary)
+                {
+                    _lastHistorySummary = summary;
+                    _gridHistory.SuspendLayout();
+                    _gridHistory.Rows.Clear();
+                    foreach (var log in logs)
+                    {
+                        string time = log.TryGetProperty("timestamp", out var t) ? t.GetString() ?? "" : "";
+                        if (DateTime.TryParse(time, out var dt)) time = dt.ToString("MM-dd HH:mm");
+                        string mach = log.TryGetProperty("machineId", out var m) ? m.GetString() ?? "" : "";
+                        string order = log.TryGetProperty("orderNumber", out var o) ? o.GetString() ?? "" : "";
+                        string part = log.TryGetProperty("partName", out var p) ? p.GetString() ?? "" : "";
+                        string detail = log.TryGetProperty("workDetail", out var d) ? d.GetString() ?? "" : "";
+                        string worker = log.TryGetProperty("workerName", out var w) ? w.GetString() ?? "" : "";
+                        string status = log.TryGetProperty("status", out var s) ? s.GetString() ?? "" : "";
 
-                    _gridHistory.Rows.Add(time, mach, order, part, detail, worker, status);
+                        _gridHistory.Rows.Add(time, mach, order, part, detail, worker, status);
+                    }
+                    _gridHistory.ResumeLayout();
                 }
             }
 
@@ -2870,19 +2947,33 @@ public class WorkflowMainForm : Form
             var defects = await _api.GetAllPermanentEventsAsync();
             if (defects != null)
             {
-                _gridDefects.Rows.Clear();
-                foreach (var def in defects)
+                var sbD = new System.Text.StringBuilder();
+                foreach (var d in defects)
                 {
-                    string id = def.TryGetProperty("id", out var i) ? i.GetInt32().ToString() : "";
-                    string mach = def.TryGetProperty("machineId", out var m) ? m.GetString() ?? "" : "";
-                    string part = def.TryGetProperty("partCode", out var p) ? p.GetString() ?? "" : "";
-                    string type = def.TryGetProperty("eventType", out var et) ? et.GetString() ?? "" : "";
-                    string desc = def.TryGetProperty("description", out var ds) ? ds.GetString() ?? "" : "";
-                    string cause = def.TryGetProperty("rootCause", out var rc) ? rc.GetString() ?? "" : "";
-                    string action = def.TryGetProperty("actionTaken", out var act) ? act.GetString() ?? "" : "";
-                    string author = def.TryGetProperty("author", out var au) ? au.GetString() ?? "" : "";
+                    string did = d.TryGetProperty("id", out var i) ? i.ToString() : "";
+                    string dact = d.TryGetProperty("actionTaken", out var a) ? a.GetString() ?? "" : "";
+                    sbD.Append(did).Append(':').Append(dact).Append(';');
+                }
+                string summary = sbD.ToString();
+                if (summary != _lastDefectsSummary)
+                {
+                    _lastDefectsSummary = summary;
+                    _gridDefects.SuspendLayout();
+                    _gridDefects.Rows.Clear();
+                    foreach (var def in defects)
+                    {
+                        string id = def.TryGetProperty("id", out var i) ? i.GetInt32().ToString() : "";
+                        string mach = def.TryGetProperty("machineId", out var m) ? m.GetString() ?? "" : "";
+                        string part = def.TryGetProperty("partCode", out var p) ? p.GetString() ?? "" : "";
+                        string type = def.TryGetProperty("eventType", out var et) ? et.GetString() ?? "" : "";
+                        string desc = def.TryGetProperty("description", out var ds) ? ds.GetString() ?? "" : "";
+                        string cause = def.TryGetProperty("rootCause", out var rc) ? rc.GetString() ?? "" : "";
+                        string action = def.TryGetProperty("actionTaken", out var act) ? act.GetString() ?? "" : "";
+                        string author = def.TryGetProperty("author", out var au) ? au.GetString() ?? "" : "";
 
-                    _gridDefects.Rows.Add(id, mach, part, type, desc, cause, action, author);
+                        _gridDefects.Rows.Add(id, mach, part, type, desc, cause, action, author);
+                    }
+                    _gridDefects.ResumeLayout();
                 }
             }
 
@@ -2890,61 +2981,77 @@ public class WorkflowMainForm : Form
             var subTasks = await _api.GetSubWorkerTasksAsync();
             if (subTasks != null)
             {
-                _gridSubTasks.Rows.Clear();
-                var subWorkerLatest = new Dictionary<string, (string Loc, string Status, string Task, string Time)>();
-
+                var sbS = new System.Text.StringBuilder();
                 foreach (var st in subTasks)
                 {
-                    string date = st.TryGetProperty("createdAt", out var dt) ? dt.GetString() ?? "" : "";
-                    string mach = st.TryGetProperty("machineId", out var m) ? m.GetString() ?? "R01" : "R01";
-                    string order = st.TryGetProperty("orderNumber", out var o) ? o.GetString() ?? "" : "";
-                    string part = st.TryGetProperty("partName", out var p) ? p.GetString() ?? "" : "";
-                    string worker = st.TryGetProperty("subWorkerName", out var sw) ? sw.GetString() ?? "이서브" : "이서브";
-                    string instr = st.TryGetProperty("instruction", out var ins) ? ins.GetString() ?? "" : "";
-                    string leader = st.TryGetProperty("leaderUsername", out var ld) ? ld.GetString() ?? "-" : "-";
-                    string status = st.TryGetProperty("status", out var stt) ? stt.GetString() ?? "지시중" : "지시중";
-                    string report = st.TryGetProperty("reportContent", out var rep) ? rep.GetString() ?? "-" : "-";
-
-                    _gridSubTasks.Rows.Add(date, worker, mach, status, instr, $"[{order}] {part}", leader, report);
-
-                    if (!subWorkerLatest.ContainsKey(worker))
-                    {
-                        subWorkerLatest[worker] = (mach, status, instr, date);
-                    }
+                    string stid = st.TryGetProperty("id", out var i) ? i.ToString() : "";
+                    string stst = st.TryGetProperty("status", out var s) ? s.GetString() ?? "" : "";
+                    sbS.Append(stid).Append(':').Append(stst).Append(';');
                 }
-
-                // Update Top Live Cards Bar
-                if (_pnlSubWorkerCards != null)
+                string summary = sbS.ToString();
+                if (summary != _lastSubTasksSummary)
                 {
-                    _pnlSubWorkerCards.Controls.Clear();
-                    var allKnownSubs = new string[] { "이서브", "김보조", "박지원", "최도움" };
-                    foreach (var name in allKnownSubs)
+                    _lastSubTasksSummary = summary;
+                    _gridSubTasks.SuspendLayout();
+                    _gridSubTasks.Rows.Clear();
+                    var subWorkerLatest = new Dictionary<string, (string Loc, string Status, string Task, string Time)>();
+
+                    foreach (var st in subTasks)
                     {
-                        string loc = subWorkerLatest.TryGetValue(name, out var info) ? info.Loc : "R01";
-                        string stat = subWorkerLatest.TryGetValue(name, out info) ? info.Status : "대기중";
-                        string taskDesc = subWorkerLatest.TryGetValue(name, out info) ? info.Task : "대기 (지시가능)";
+                        string date = st.TryGetProperty("createdAt", out var dt) ? dt.GetString() ?? "" : "";
+                        string mach = st.TryGetProperty("machineId", out var m) ? m.GetString() ?? "R01" : "R01";
+                        string order = st.TryGetProperty("orderNumber", out var o) ? o.GetString() ?? "" : "";
+                        string part = st.TryGetProperty("partName", out var p) ? p.GetString() ?? "" : "";
+                        string worker = st.TryGetProperty("subWorkerName", out var sw) ? sw.GetString() ?? "이서브" : "이서브";
+                        string instr = st.TryGetProperty("instruction", out var ins) ? ins.GetString() ?? "" : "";
+                        string leader = st.TryGetProperty("leaderUsername", out var ld) ? ld.GetString() ?? "-" : "-";
+                        string status = st.TryGetProperty("status", out var stt) ? stt.GetString() ?? "지시중" : "지시중";
+                        string report = st.TryGetProperty("reportContent", out var rep) ? rep.GetString() ?? "-" : "-";
 
-                        Color statCol = stat.Contains("완료") ? Palette.AccentSky : (stat.Contains("가공") || stat.Contains("작업") ? Palette.Green : Palette.Amber);
+                        _gridSubTasks.Rows.Add(date, worker, mach, status, instr, $"[{order}] {part}", leader, report);
 
-                        var card = new Button
+                        if (!subWorkerLatest.ContainsKey(worker))
                         {
-                            Text = $"👤 {name}  |  📍 {loc}  |  [{stat}]",
-                            BackColor = Color.FromArgb(24, 34, 53),
-                            ForeColor = statCol,
-                            FlatStyle = FlatStyle.Flat,
-                            AutoSize = true,
-                            Height = 28,
-                            Margin = new Padding(2, 2, 6, 2),
-                            Padding = new Padding(6, 2, 6, 2),
-                            Font = new Font("맑은 고딕", 8f, FontStyle.Bold),
-                            Cursor = Cursors.Hand
-                        };
-                        card.FlatAppearance.BorderColor = Color.FromArgb(80, statCol);
-                        card.FlatAppearance.BorderSize = 1;
-                        string capturedName = name;
-                        string capturedLoc = loc;
-                        card.Click += (s, e) => OpenSubWorkerDispatchModal(capturedName, capturedLoc);
-                        _pnlSubWorkerCards.Controls.Add(card);
+                            subWorkerLatest[worker] = (mach, status, instr, date);
+                        }
+                    }
+                    _gridSubTasks.ResumeLayout();
+
+                    // Update Top Live Cards Bar
+                    if (_pnlSubWorkerCards != null)
+                    {
+                        _pnlSubWorkerCards.SuspendLayout();
+                        _pnlSubWorkerCards.Controls.Clear();
+                        var allKnownSubs = new string[] { "이서브", "김보조", "박지원", "최도움" };
+                        foreach (var name in allKnownSubs)
+                        {
+                            string loc = subWorkerLatest.TryGetValue(name, out var info) ? info.Loc : "R01";
+                            string stat = subWorkerLatest.TryGetValue(name, out info) ? info.Status : "대기중";
+                            string taskDesc = subWorkerLatest.TryGetValue(name, out info) ? info.Task : "대기 (지시가능)";
+
+                            Color statCol = stat.Contains("완료") ? Palette.AccentSky : (stat.Contains("가공") || stat.Contains("작업") ? Palette.Green : Palette.Amber);
+
+                            var card = new Button
+                            {
+                                Text = $"👤 {name}  |  📍 {loc}  |  [{stat}]",
+                                BackColor = Color.FromArgb(24, 34, 53),
+                                ForeColor = statCol,
+                                FlatStyle = FlatStyle.Flat,
+                                AutoSize = true,
+                                Height = 28,
+                                Margin = new Padding(2, 2, 6, 2),
+                                Padding = new Padding(6, 2, 6, 2),
+                                Font = new Font("맑은 고딕", 8f, FontStyle.Bold),
+                                Cursor = Cursors.Hand
+                            };
+                            card.FlatAppearance.BorderColor = Color.FromArgb(80, statCol);
+                            card.FlatAppearance.BorderSize = 1;
+                            string capturedName = name;
+                            string capturedLoc = loc;
+                            card.Click += (s, e) => OpenSubWorkerDispatchModal(capturedName, capturedLoc);
+                            _pnlSubWorkerCards.Controls.Add(card);
+                        }
+                        _pnlSubWorkerCards.ResumeLayout();
                     }
                 }
             }
@@ -2953,87 +3060,32 @@ public class WorkflowMainForm : Form
             var posts = await _api.GetPostProcessReportsAsync();
             if (posts != null)
             {
-                _gridPostProcess.Rows.Clear();
+                var sbP = new System.Text.StringBuilder();
                 foreach (var pp in posts)
                 {
-                    string id = pp.TryGetProperty("id", out var i) ? i.GetInt32().ToString() : "";
-                    string order = pp.TryGetProperty("orderNumber", out var o) ? o.GetString() ?? "" : "";
-                    string part = pp.TryGetProperty("partName", out var p) ? p.GetString() ?? "" : "";
-                    string mach = pp.TryGetProperty("machineId", out var m) ? m.GetString() ?? "" : "";
-                    string worker = pp.TryGetProperty("worker", out var w) ? w.GetString() ?? "" : "";
-                    string procs = pp.TryGetProperty("selectedProcesses", out var sp) ? sp.GetString() ?? "" : "";
-                    string status = pp.TryGetProperty("status", out var stt) ? stt.GetString() ?? "" : "";
-
-                    _gridPostProcess.Rows.Add(id, order, part, mach, worker, procs, status);
+                    string ppid = pp.TryGetProperty("id", out var i) ? i.ToString() : "";
+                    string ppst = pp.TryGetProperty("status", out var s) ? s.GetString() ?? "" : "";
+                    sbP.Append(ppid).Append(':').Append(ppst).Append(';');
                 }
-            }
-        }
-        catch { }
-    }
-
-    private (string channelType, string topicKey) GetCurrentChatTopic()
-    {
-        var sel = _cboChatChannel.SelectedItem?.ToString() ?? "";
-        if (sel.Contains("R01")) return ("MACHINE", "R01");
-        if (sel.Contains("R02")) return ("MACHINE", "R02");
-        if (sel.Contains("이슈") || sel.Contains("품질")) return ("GENERAL", "품질이슈");
-        return ("GENERAL", "공통");
-    }
-
-    private async Task LoadNoticesAsync()
-    {
-        try
-        {
-            var list = await _api.GetNoticesAsync();
-            if (list != null)
-            {
-                if (_lstNotices != null) _lstNotices.Items.Clear();
-                int unread = 0;
-                string firstNoticeTitle = "";
-                foreach (var n in list)
+                string summary = sbP.ToString();
+                if (summary != _lastPostProcessSummary)
                 {
-                    string title = n.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "";
-                    if (string.IsNullOrEmpty(firstNoticeTitle)) firstNoticeTitle = title;
-                    string date = n.TryGetProperty("createdAt", out var cd) ? cd.GetString() ?? "" : "";
-                    string acks = n.TryGetProperty("officialAcksJson", out var ak) ? ak.GetString() ?? "" : "";
-                    string noticeId = n.TryGetProperty("id", out var idEl) ? idEl.ToString() : title;
-                    bool isAcked = acks.Contains(_session.Username) || acks.Contains(_session.DisplayName);
-
-                    if (DateTime.TryParse(date, out var dt)) date = dt.ToString("MM-dd HH:mm");
-                    string badge = isAcked ? "✔" : "🔔";
-                    if (!isAcked) unread++;
-
-                    if (_lstNotices != null) _lstNotices.Items.Add($"{badge} {title} ({date})");
-
-                    if (_isInitialDataLoaded && !string.IsNullOrEmpty(title) && !_knownNoticeTitles.Contains(noticeId))
+                    _lastPostProcessSummary = summary;
+                    _gridPostProcess.SuspendLayout();
+                    _gridPostProcess.Rows.Clear();
+                    foreach (var pp in posts)
                     {
-                        ToastNotificationForm.ShowToast(
-                            "📢 새 공지사항 알림",
-                            $"[공지] {title}",
-                            ToastType.Notice,
-                            async () => await ShowNoticesDialogAsync()
-                        );
+                        string id = pp.TryGetProperty("id", out var i) ? i.GetInt32().ToString() : "";
+                        string order = pp.TryGetProperty("orderNumber", out var o) ? o.GetString() ?? "" : "";
+                        string part = pp.TryGetProperty("partName", out var p) ? p.GetString() ?? "" : "";
+                        string mach = pp.TryGetProperty("machineId", out var m) ? m.GetString() ?? "" : "";
+                        string worker = pp.TryGetProperty("worker", out var w) ? w.GetString() ?? "" : "";
+                        string procs = pp.TryGetProperty("selectedProcesses", out var sp) ? sp.GetString() ?? "" : "";
+                        string status = pp.TryGetProperty("status", out var stt) ? stt.GetString() ?? "" : "";
+
+                        _gridPostProcess.Rows.Add(id, order, part, mach, worker, procs, status);
                     }
-                    if (!string.IsNullOrEmpty(noticeId))
-                    {
-                        _knownNoticeTitles.Add(noticeId);
-                    }
-                }
-                if (_lblNoticeBadge != null)
-                {
-                    _lblNoticeBadge.Text = unread > 0 ? $"{unread}건 미확인" : "전원 확인완료";
-                    _lblNoticeBadge.ForeColor = unread > 0 ? Palette.Amber : Palette.Green;
-                }
-                if (_btnOpenNoticesTop != null)
-                {
-                    _btnOpenNoticesTop.Text = unread > 0 ? $"🔔 공지({unread})" : "📢 공지사항";
-                    _btnOpenNoticesTop.ForeColor = unread > 0 ? Palette.Amber : Palette.AccentSky;
-                }
-                if (_lblTopNoticeBanner != null)
-                {
-                    _lblTopNoticeBanner.Text = string.IsNullOrEmpty(firstNoticeTitle)
-                        ? "📢 등록된 최신 공지가 없습니다."
-                        : $"📢 최신: {firstNoticeTitle} (클릭시 전체목록)";
+                    _gridPostProcess.ResumeLayout();
                 }
             }
         }
@@ -3151,6 +3203,91 @@ public class WorkflowMainForm : Form
         dlg.ShowDialog(this);
     }
 
+    private (string channelType, string topicKey) GetCurrentChatTopic()
+    {
+        var sel = _cboChatChannel.SelectedItem?.ToString() ?? "";
+        if (sel.Contains("R01")) return ("MACHINE", "R01");
+        if (sel.Contains("R02")) return ("MACHINE", "R02");
+        if (sel.Contains("이슈") || sel.Contains("품질")) return ("GENERAL", "품질이슈");
+        return ("GENERAL", "공통");
+    }
+
+    private async Task LoadNoticesAsync()
+    {
+        try
+        {
+            var list = await _api.GetNoticesAsync();
+            if (list != null)
+            {
+                var sb = new System.Text.StringBuilder();
+                foreach (var n in list)
+                {
+                    string title = n.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "";
+                    string noticeId = n.TryGetProperty("id", out var idEl) ? idEl.ToString() : title;
+                    string acks = n.TryGetProperty("officialAcksJson", out var ak) ? ak.GetString() ?? "" : "";
+                    sb.Append(noticeId).Append(':').Append(acks).Append(';');
+
+                    if (_isInitialDataLoaded && !string.IsNullOrEmpty(title) && !_knownNoticeTitles.Contains(noticeId))
+                    {
+                        ToastNotificationForm.ShowToast(
+                            "📢 새 공지사항 알림",
+                            $"[공지] {title}",
+                            ToastType.Notice,
+                            async () => await ShowNoticesDialogAsync()
+                        );
+                    }
+                    if (!string.IsNullOrEmpty(noticeId)) _knownNoticeTitles.Add(noticeId);
+                }
+
+                string newSummary = sb.ToString();
+                if (newSummary != _lastNoticesSummary)
+                {
+                    _lastNoticesSummary = newSummary;
+                    if (_lstNotices != null)
+                    {
+                        _lstNotices.BeginUpdate();
+                        _lstNotices.Items.Clear();
+                    }
+                    int unread = 0;
+                    string firstNoticeTitle = "";
+                    foreach (var n in list)
+                    {
+                        string title = n.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "";
+                        if (string.IsNullOrEmpty(firstNoticeTitle)) firstNoticeTitle = title;
+                        string date = n.TryGetProperty("createdAt", out var cd) ? cd.GetString() ?? "" : "";
+                        string acks = n.TryGetProperty("officialAcksJson", out var ak) ? ak.GetString() ?? "" : "";
+                        bool isAcked = acks.Contains(_session.Username) || acks.Contains(_session.DisplayName);
+
+                        if (DateTime.TryParse(date, out var dt)) date = dt.ToString("MM-dd HH:mm");
+                        string badge = isAcked ? "✔" : "🔔";
+                        if (!isAcked) unread++;
+
+                        if (_lstNotices != null) _lstNotices.Items.Add($"{badge} {title} ({date})");
+                    }
+                    if (_lstNotices != null) _lstNotices.EndUpdate();
+
+                    if (_lblNoticeBadge != null)
+                    {
+                        _lblNoticeBadge.Text = unread > 0 ? $"{unread}건 미확인" : "전원 확인완료";
+                        _lblNoticeBadge.ForeColor = unread > 0 ? Palette.Amber : Palette.Green;
+                    }
+                    if (_btnOpenNoticesTop != null)
+                    {
+                        _btnOpenNoticesTop.Text = unread > 0 ? $"🔔 공지({unread})" : "📢 공지사항";
+                        _btnOpenNoticesTop.ForeColor = unread > 0 ? Palette.Amber : Palette.AccentSky;
+                    }
+                    if (_lblTopNoticeBanner != null)
+                    {
+                        _lblTopNoticeBanner.Text = string.IsNullOrEmpty(firstNoticeTitle)
+                            ? "📢 등록된 최신 공지가 없습니다."
+                            : $"📢 최신: {firstNoticeTitle} (클릭시 전체목록)";
+                    }
+                }
+            }
+        }
+        catch { }
+    }
+
     private async Task LoadChatAsync()
     {
         try
@@ -3159,13 +3296,16 @@ public class WorkflowMainForm : Form
             var list = await _api.GetChatMessagesByChannelAsync(cType, tKey);
             if (list != null)
             {
-                _lstChat.Items.Clear();
+                var newItems = new List<string>();
+                var sbSummary = new System.Text.StringBuilder();
+
                 foreach (var msg in list)
                 {
                     string author = msg.TryGetProperty("author", out var s) ? s.GetString() ?? "" : "시스템";
                     string content = msg.TryGetProperty("content", out var m) ? m.GetString() ?? "" : "";
                     string createdAt = msg.TryGetProperty("createdAt", out var cd) ? cd.GetString() ?? "" : "";
                     string sig = $"{author}_{createdAt}_{content}";
+                    sbSummary.Append(sig).Append(';');
 
                     if (_isInitialDataLoaded && !string.IsNullOrEmpty(content) && !_knownChatSignatures.Contains(sig))
                     {
@@ -3186,17 +3326,21 @@ public class WorkflowMainForm : Form
                             );
                         }
                     }
-                    if (!string.IsNullOrEmpty(sig))
-                    {
-                        _knownChatSignatures.Add(sig);
-                    }
+                    if (!string.IsNullOrEmpty(sig)) _knownChatSignatures.Add(sig);
 
                     if (DateTime.TryParse(createdAt, out var dt)) createdAt = dt.ToString("HH:mm");
-                    _lstChat.Items.Add($"[{author}] {content} ({createdAt})");
+                    newItems.Add($"[{author}] {content} ({createdAt})");
                 }
-                if (_lstChat.Items.Count > 0)
+
+                string summary = sbSummary.ToString();
+                if (summary != _lastChatSummary)
                 {
-                    _lstChat.TopIndex = _lstChat.Items.Count - 1;
+                    _lastChatSummary = summary;
+                    _lstChat.BeginUpdate();
+                    _lstChat.Items.Clear();
+                    foreach (var line in newItems) _lstChat.Items.Add(line);
+                    if (_lstChat.Items.Count > 0) _lstChat.TopIndex = _lstChat.Items.Count - 1;
+                    _lstChat.EndUpdate();
                 }
             }
         }

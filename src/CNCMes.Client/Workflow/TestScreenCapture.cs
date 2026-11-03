@@ -36,62 +36,140 @@ public static class TestScreenCapture
             System.Threading.Thread.Sleep(50);
         }
 
-        // 1. Toast Notification Forms rendering test (신규 작업지시서, 공지사항, 채팅 알림)
-        var toast1 = new ToastNotificationForm("📋 신규 작업지시서 등록", "새 작업지시서 [WO-2026-003] (삼성전자) 등록되었습니다.", ToastType.WorkOrder);
-        toast1.Opacity = 0.95;
-        toast1.Location = new Point(1920 - 380, 1080 - 100);
-        toast1.Show();
-
-        var toast2 = new ToastNotificationForm("📢 새 공지사항 알림", "[긴급공지] 오후 2시 공구 교체 및 안전 점검 진행 예정", ToastType.Notice);
-        toast2.Opacity = 0.95;
-        toast2.Location = new Point(1920 - 380, 1080 - 195);
-        toast2.Show();
-
-        var toast3 = new ToastNotificationForm("💬 새 현장 채팅", "[이반장]: R02 황삭 가공 완료되었습니다. 측정실 이송 부탁드립니다.", ToastType.Chat);
-        toast3.Opacity = 0.95;
-        toast3.Location = new Point(1920 - 380, 1080 - 290);
-        toast3.Show();
-
-        for (int k = 0; k < 15; k++) { Application.DoEvents(); System.Threading.Thread.Sleep(30); }
-
-        // Capture single toast card preview
-        using (var toastBmp = new Bitmap(toast1.Width, toast1.Height))
+        // Access canvas and create nodes showing 4-way connection ports (Left, Right, Top, Bottom)
+        var canvasField = typeof(WorkflowMainForm).GetField("_canvas", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        if (canvasField?.GetValue(form) is WorkflowCanvasControl canvas)
         {
-            toast1.DrawToBitmap(toastBmp, new Rectangle(0, 0, toast1.Width, toast1.Height));
-            string tPath = @"C:\Users\USER\.gemini\antigravity\brain\c11cfd6b-e9b4-430b-acd3-767a137025e6\toast_card_v153.png";
-            toastBmp.Save(tPath, ImageFormat.Png);
-            Console.WriteLine("SAVED_TOAST_CARD: " + tPath);
+            canvas.Clear();
+
+            // Create Node 1 (1차 가공)
+            var n1 = new WorkflowNode
+            {
+                Id = "N01",
+                Title = "1차 전면 황삭 가공",
+                Category = NodeCategory.Machining,
+                MachineId = "R01",
+                Assignee = "김철수",
+                Status = NodeStatus.Completed,
+                MaterialSize = "150x120x5T",
+                MaterialType = "PEEK",
+                FixingMethod = "바이스",
+                StartTime = "09:00",
+                EndTime = "10:30",
+                X = 120,
+                Y = 140,
+                Width = 240,
+                Height = 100
+            };
+
+            // Create Node 2 (측정/검사 - 우측 연결)
+            var n2 = new WorkflowNode
+            {
+                Id = "N02",
+                Title = "1차 중간 정밀 측정 (CMM)",
+                Category = NodeCategory.Inspection,
+                MachineId = "측정실",
+                Assignee = "박검사",
+                Status = NodeStatus.Running,
+                StartTime = "10:30",
+                EndTime = "11:20",
+                X = 480,
+                Y = 140,
+                Width = 240,
+                Height = 100
+            };
+
+            // Create Node 3 (서브인원 후공정 - 아래로 연결: Top/Bottom 포트 연결 시연)
+            var n3 = new WorkflowNode
+            {
+                Id = "N03",
+                Title = "챔퍼 및 버(Burr) 제거",
+                Category = NodeCategory.Collaboration,
+                MachineId = "후공정",
+                Assignee = "이서브",
+                Status = NodeStatus.Ready,
+                StartTime = "11:30",
+                EndTime = "12:30",
+                X = 480,
+                Y = 320,
+                Width = 240,
+                Height = 100
+            };
+
+            // Create Node 4 (2차 가공 - 좌측으로 복귀 연결)
+            var n4 = new WorkflowNode
+            {
+                Id = "N04",
+                Title = "2차 미세피치 정삭 (홀가공)",
+                Category = NodeCategory.Machining,
+                MachineId = "R02",
+                Assignee = "최가공",
+                Status = NodeStatus.Ready,
+                StartTime = "13:30",
+                EndTime = "15:00",
+                X = 120,
+                Y = 320,
+                Width = 240,
+                Height = 100
+            };
+
+            canvas.Nodes.AddRange(new[] { n1, n2, n3, n4 });
+
+            // Connect N1 (Right) -> N2 (Left) [수평 연결]
+            canvas.AddEdge("N01", "N02", EdgeType.Sequence);
+
+            // Connect N2 (Bottom) -> N3 (Top) [수직 연결: 요청하신 위/아래 노드점 활용!]
+            canvas.AddEdge("N02", "N03", EdgeType.Delegation);
+
+            // Connect N3 (Left) -> N4 (Right) [수평 역방향 연결]
+            canvas.AddEdge("N03", "N04", EdgeType.Sequence);
+
+            // Title Box for Visual Polish
+            canvas.TitleBoxes.Add(new WorkflowTitleBox
+            {
+                Title = "반도체 프로브카드 4단 멀티공정 (상하좌우 4포트 연결망)",
+                ColorHex = "#0284c7",
+                X = 80,
+                Y = 80,
+                Width = 680,
+                Height = 380
+            });
+
+            canvas.ResetView();
+            canvas.Invalidate();
         }
 
-        // 2. Main Workflow Form Capture (with v1.5.3 top bar, refresh F5 button, auto-polling toggle, timeline interval)
+        for (int i = 0; i < 20; i++)
+        {
+            Application.DoEvents();
+            System.Threading.Thread.Sleep(50);
+        }
+
+        // Save v1.5.4 screen capture
         using (var bmp = new Bitmap(1920, 1080))
         {
             form.DrawToBitmap(bmp, new Rectangle(0, 0, 1920, 1080));
-
-            // Overlay active toast notifications onto full screen capture
-            using (var g = Graphics.FromImage(bmp))
-            {
-                using var b1 = new Bitmap(toast1.Width, toast1.Height);
-                toast1.DrawToBitmap(b1, new Rectangle(0, 0, toast1.Width, toast1.Height));
-                g.DrawImage(b1, toast1.Location);
-
-                using var b2 = new Bitmap(toast2.Width, toast2.Height);
-                toast2.DrawToBitmap(b2, new Rectangle(0, 0, toast2.Width, toast2.Height));
-                g.DrawImage(b2, toast2.Location);
-
-                using var b3 = new Bitmap(toast3.Width, toast3.Height);
-                toast3.DrawToBitmap(b3, new Rectangle(0, 0, toast3.Width, toast3.Height));
-                g.DrawImage(b3, toast3.Location);
-            }
-
-            string path = @"C:\Users\USER\.gemini\antigravity\brain\c11cfd6b-e9b4-430b-acd3-767a137025e6\workflow_v153_main_screen.png";
+            string path = @"C:\Users\USER\.gemini\antigravity\brain\c11cfd6b-e9b4-430b-acd3-767a137025e6\workflow_v154_screen.png";
             bmp.Save(path, ImageFormat.Png);
-            Console.WriteLine("SAVED_V153_SCREEN: " + path);
+            Console.WriteLine("SAVED_V154_SCREEN: " + path);
         }
 
-        toast1.Close();
-        toast2.Close();
-        toast3.Close();
+        // Also capture node close-up showing all 4 ports (Left, Right, Top, Bottom)
+        using (var nodeBmp = new Bitmap(760, 420))
+        {
+            using var g = Graphics.FromImage(nodeBmp);
+            g.Clear(Color.FromArgb(10, 15, 29));
+            if (canvasField?.GetValue(form) is WorkflowCanvasControl c)
+            {
+                using var fullBmp = new Bitmap(1920, 1080);
+                form.DrawToBitmap(fullBmp, new Rectangle(0, 0, 1920, 1080));
+                g.DrawImage(fullBmp, new Rectangle(0, 0, 760, 420), new Rectangle(400, 110, 760, 420), GraphicsUnit.Pixel);
+            }
+            string cropPath = @"C:\Users\USER\.gemini\antigravity\brain\c11cfd6b-e9b4-430b-acd3-767a137025e6\node_4ports_v154.png";
+            nodeBmp.Save(cropPath, ImageFormat.Png);
+            Console.WriteLine("SAVED_NODE_4PORTS: " + cropPath);
+        }
+
         form.Close();
     }
 }

@@ -146,7 +146,7 @@ public class MainWorkerForm : Form
 
         private void InitializeComponents()
     {
-        Text = $"[CNC-MES 스마트 현장 터미널 v1.5.3] 작업자: {_session.DisplayName} ({_api.Config.ServerUrl})";
+        Text = $"[CNC-MES 스마트 현장 터미널 v1.5.4] 작업자: {_session.DisplayName} ({_api.Config.ServerUrl})";
         Size = new Size(1500, 950);
         MinimumSize = new Size(1280, 820);
         WindowState = FormWindowState.Maximized;
@@ -232,7 +232,7 @@ public class MainWorkerForm : Form
 
         var lblVersionBadge = new Label
         {
-            Text = "v1.5.3",
+            Text = "v1.5.4",
             Location = new Point(136, 12),
             Font = new Font("Consolas", 8f, FontStyle.Bold),
             ForeColor = CncTheme.AccentSky,
@@ -602,7 +602,7 @@ public class MainWorkerForm : Form
         };
         clockTimer.Start();
 
-        _pollTimer = new System.Windows.Forms.Timer { Interval = 3500 };
+        _pollTimer = new System.Windows.Forms.Timer { Interval = 2000 };
         _pollTimer.Tick += async (s, e) => await PollRealtimeUpdatesAsync();
         _pollTimer.Start();
     }
@@ -3400,7 +3400,7 @@ public class MainWorkerForm : Form
             var items = new List<string>();
             foreach (var m in msgs)
             {
-                int id = m.TryGetProperty("id", out var idProp) ? idProp.GetInt32() : 0;
+                int id = m.TryGetProperty("id", out var idProp) ? idProp.GetInt32() : (m.TryGetProperty("Id", out var idProp2) ? idProp2.GetInt32() : 0);
                 var author = m.GetProperty("author").GetString() ?? "";
                 var content = m.GetProperty("content").GetString() ?? "";
                 var time = m.GetProperty("createdAt").GetString() ?? "";
