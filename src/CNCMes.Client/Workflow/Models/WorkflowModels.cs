@@ -245,6 +245,12 @@ public class WorkUnitJob
     public string ConfirmedBy { get; set; } = "";
     public string ConfirmedSnapshotId { get; set; } = "";
 
+    // [요구사항] 전체 작업 완료 정보
+    public bool IsCompleted { get; set; } = false;
+    public DateTime? CompletedAt { get; set; }
+    public string CompletedBy { get; set; } = "";
+    public string CompletedSnapshotId { get; set; } = "";
+
     // 소속 노드, 엣지, 타이틀 박스
     public List<WorkflowNode> Nodes { get; set; } = new();
     public List<WorkflowEdge> Edges { get; set; } = new();

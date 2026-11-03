@@ -115,6 +115,10 @@ public class WorkflowCanvasControl : UserControl
     public bool IsWorkflowConfirmed { get; set; } = false;
     public string ConfirmedInfoText { get; set; } = "";
 
+    // ReadOnly Mode for Viewing Completed or Past Historical Workflows
+    public bool IsReadOnly { get; set; } = false;
+    public string ReadOnlyBannerText { get; set; } = "";
+
     public List<WorkflowNode> SelectedNodes { get; } = new();
     public event Action<IReadOnlyList<WorkflowNode>>? SelectionChanged;
     public event Action<WorkflowNode?>? NodeSelected;
@@ -123,7 +127,9 @@ public class WorkflowCanvasControl : UserControl
     public event Action? WorkflowChanged;
     public event Action? RequestGenerateDefaultWorkflow;
     public event Action<NodeCategory>? RequestAddQuickNode;
-    public event Action<WorkflowNode>? IssueBadgeClicked;
+    public event Action<WorkflowNode>? IssueBadgeClicked;
+    public event Action? RequestReturnToOngoingJob;
+    private RectangleF _returnButtonScreenRect;
 
     private WorkflowNode? _selectedNode;
     private WorkflowEdge? _selectedEdge;
@@ -747,7 +753,8 @@ public class WorkflowCanvasControl : UserControl
         }
 
         DrawCutButtonOverlay(g);
-        DrawConfirmedBadgeOverlay(g);
+        DrawConfirmedBadgeOverlay(g);
+        DrawReadOnlyBannerOverlay(g);
         DrawHudOverlay(g);
         DrawMarqueeSelectionOverlay(g);
         if (ShowTimelineGuides) DrawTimelineRulerHeader(g);
@@ -1515,7 +1522,41 @@ public class WorkflowCanvasControl : UserControl
         g.DrawEllipse(pen, r);
     }
 
-    private void DrawConfirmedBadgeOverlay(Graphics g)
+    private void DrawReadOnlyBannerOverlay(Graphics g)
+    {
+        if (!IsReadOnly && string.IsNullOrEmpty(ReadOnlyBannerText)) return;
+
+        string bannerMsg = string.IsNullOrEmpty(ReadOnlyBannerText)
+            ? "🔒 [읽기 전용 모드] 과거 확정 및 완료된 작업 워크플로우를 열람 중입니다."
+            : ReadOnlyBannerText;
+
+        using var font = new Font("맑은 고딕", 9.2f, FontStyle.Bold);
+        using var sfText = new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center };
+        using var sfBtn = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+
+        float topY = ShowTimelineGuides && (Nodes.Count > 0 || TitleBoxes.Count > 0) ? 30f : 8f;
+        float h = 34f;
+        var bannerRect = new RectangleF(10f, topY, Width - 20f, h);
+
+        using var bg = new SolidBrush(Color.FromArgb(235, 13, 148, 136));
+        using var border = new Pen(Color.FromArgb(45, 212, 191), 1.5f);
+        DrawRoundedRectangle(g, bg, border, bannerRect, 6f);
+
+        var textRect = new RectangleF(24f, topY, bannerRect.Width - 230f, h);
+        using var textBrush = new SolidBrush(Color.White);
+        g.DrawString(bannerMsg, font, textBrush, textRect, sfText);
+
+        _returnButtonScreenRect = new RectangleF(bannerRect.Right - 205f, topY + 4f, 195f, 26f);
+        using var btnBg = new SolidBrush(Color.FromArgb(15, 23, 42));
+        using var btnBorder = new Pen(Color.FromArgb(245, 158, 11), 1.2f);
+        DrawRoundedRectangle(g, btnBg, btnBorder, _returnButtonScreenRect, 4f);
+
+        using var btnFont = new Font("맑은 고딕", 8.5f, FontStyle.Bold);
+        using var btnTextBrush = new SolidBrush(Color.FromArgb(254, 240, 138));
+        g.DrawString("◀ 원래 진행 작업으로 복귀", btnFont, btnTextBrush, _returnButtonScreenRect, sfBtn);
+    }
+
+    private void DrawConfirmedBadgeOverlay(Graphics g)
     {
         if (!IsWorkflowConfirmed) return;
 
@@ -1665,9 +1706,62 @@ public class WorkflowCanvasControl : UserControl
         }
     }
 
-    protected override void OnMouseDown(MouseEventArgs e)
-    {
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        if (IsReadOnly && _returnButtonScreenRect.Contains(e.Location))
+        {
+            RequestReturnToOngoingJob?.Invoke();
+            return;
+        }
         base.OnMouseDown(e);
+
+        if (IsReadOnly)
+        {
+            if (e.Button == MouseButtons.Right)
+            {
+                _isPanning = true;
+                _panStartMouse = e.Location;
+                Cursor = Cursors.SizeAll;
+                return;
+            }
+            if (e.Button == MouseButtons.Left)
+            {
+                var worldPt = ScreenToWorld(e.Location);
+                var hitNode = Nodes.AsEnumerable().Reverse().FirstOrDefault(n => n.Bounds.Contains(worldPt));
+                if (hitNode != null)
+                {
+                    SetSelectedNodes(new[] { hitNode });
+                    NodeSelected?.Invoke(hitNode);
+                    SelectionChanged?.Invoke(SelectedNodes);
+                    Invalidate();
+                }
+            }
+            return;
+        }
+
+        if (IsReadOnly)
+        {
+            if (e.Button == MouseButtons.Right)
+            {
+                _isPanning = true;
+                _panStartMouse = e.Location;
+                Cursor = Cursors.SizeAll;
+                return;
+            }
+            if (e.Button == MouseButtons.Left)
+            {
+                var worldPt = ScreenToWorld(e.Location);
+                var hitNode = Nodes.AsEnumerable().Reverse().FirstOrDefault(n => n.Bounds.Contains(worldPt));
+                if (hitNode != null)
+                {
+                    SetSelectedNodes(new[] { hitNode });
+                    NodeSelected?.Invoke(hitNode);
+                    SelectionChanged?.Invoke(SelectedNodes);
+                    Invalidate();
+                }
+            }
+            return;
+        }
         Focus(); // Ensure canvas captures keyboard focus for Delete/Ctrl+A keys
 
         _mouseDownLocation = e.Location;

@@ -101,9 +101,16 @@ public class WorkflowMainForm : Form
     private TableLayoutPanel _mainContainer = null!;
     private Control _pnlRightSidebar = null!;
     private Button _btnConfirmPlan = null!;
+    private Button _btnCompleteEntireJob = null!;
     private Label _lblConfirmedStatusBadge = null!;
     private bool _isPlanConfirmed = false;
     private DateTime? _planConfirmedAt;
+
+    // Historical Inspection & Part Switching Safety
+    private WorkUnitJob? _activeOngoingJob; // 과거 작업 열람 전 진행 중 작업 임시 보관
+    private Panel? _pnlHistoricalBanner;
+    private int _previousPartIndex = -1;
+    private bool _isSwitchingPart = false;
 
     private System.Windows.Forms.Timer _pollTimer = null!;
 
@@ -151,7 +158,7 @@ public class WorkflowMainForm : Form
 
     private void InitializeUI()
     {
-        Text = $"CNC-MES 스마트 현장 터미널 v1.6.1 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
+        Text = $"CNC-MES 스마트 현장 터미널 v1.6.2 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
         Size = new Size(1600, 960);
         MinimumSize = new Size(1280, 720);
         StartPosition = FormStartPosition.CenterScreen;
@@ -275,7 +282,7 @@ public class WorkflowMainForm : Form
         pnlBrand.Controls.Add(pnlIcon);
 
         var lblBrand = new Label { Text = "CNC-MES", Location = new Point(44, 8), Font = new Font("맑은 고딕", 12f, FontStyle.Bold), ForeColor = Color.White, AutoSize = true };
-        var lblVer = new Label { Text = "v1.6.1 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
+        var lblVer = new Label { Text = "v1.6.2 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
         var lblStatus = new Label { Text = "● 서버 정상", Location = new Point(245, 11), Font = new Font("맑은 고딕", 8f, FontStyle.Bold), ForeColor = Palette.Green, BackColor = Color.FromArgb(80, 6, 78, 59), AutoSize = true, Padding = new Padding(5, 1, 5, 1) };
         var lblSub = new Label { Text = "WORKFLOW-BASED OPERATOR CONTROL SYSTEM", Location = new Point(45, 30), Font = new Font("Consolas", 7.2f), ForeColor = Palette.TextSlate400, AutoSize = true };
         pnlBrand.Controls.AddRange(new Control[] { lblBrand, lblVer, lblStatus, lblSub });
@@ -536,9 +543,13 @@ public class WorkflowMainForm : Form
         btnLoadTemplate.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
         btnLoadTemplate.Click += (s, e) => OpenLoadTemplateDialog();
 
-        _btnConfirmPlan = CreateFlatButton("🔒 계획 확정", Color.FromArgb(8, 47, 73), Palette.AccentSky);
-        _btnConfirmPlan.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
+        _btnConfirmPlan = CreateFlatButton("🔒 계획 확정·공유", Color.FromArgb(8, 47, 73), Palette.AccentSky);
+        _btnConfirmPlan.Font = new Font("맑은 고딕", 8.0f, FontStyle.Bold);
         _btnConfirmPlan.Click += async (s, e) => await ConfirmAndShareWorkflowAsync();
+
+        _btnCompleteEntireJob = CreateFlatButton("✅ 전체 작업 완료", Color.FromArgb(4, 120, 87), Color.White);
+        _btnCompleteEntireJob.Font = new Font("맑은 고딕", 8.0f, FontStyle.Bold);
+        _btnCompleteEntireJob.Click += async (s, e) => await CompleteEntireJobAsync();
 
         var btnExecuteSelected = CreateFlatButton("▶ 선택작업 실행", Color.FromArgb(5, 150, 105), Color.White);
         btnExecuteSelected.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
@@ -552,30 +563,23 @@ public class WorkflowMainForm : Form
         btnTimeline.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
         btnTimeline.Click += (s, e) => _canvas.ArrangeByTimeline();
 
-        var btnSaveDraft = CreateFlatButton("💾 임시저장", Palette.Bg800, Color.FromArgb(52, 211, 153));
-        btnSaveDraft.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
-        btnSaveDraft.Click += (s, e) => SaveWorkflowDraftLocally();
-
         var btnClearPlan = CreateFlatButton("🗑 전체 초기화", Palette.Bg800, Palette.Rose);
         btnClearPlan.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
         btnClearPlan.Click += (s, e) =>
         {
-            if (MessageBox.Show("현재 캔버스의 모든 노드와 연결선을 초기화하시겠습니까?", "초기화 확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+            if (_canvas.IsReadOnly)
+            {
+                MessageBox.Show("완료된 작업 열람 중에는 초기화할 수 없습니다.", "안내", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            if (MessageBox.Show("현재 캔버스의 모든 노드와 연결선을 초기화하시겠습니까?\n(빈 화면 상태도 안전하게 자동 저장됩니다)", "초기화 확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
             {
                 _canvas.Clear();
                 ResetWorkflowConfirmation();
                 UpdateWorkflowStats();
+                AutoSaveWorkflow();
             }
         };
-
-        menuGrid.Controls.Add(btnGenDefault, 0, 0);
-        menuGrid.Controls.Add(btnProbecard, 1, 0);
-        menuGrid.Controls.Add(btnSaveTemplate, 0, 1);
-        menuGrid.Controls.Add(btnLoadTemplate, 1, 1);
-        menuGrid.Controls.Add(_btnConfirmPlan, 0, 2);
-        menuGrid.Controls.Add(btnExecuteSelected, 1, 2);
-        menuGrid.Controls.Add(btnAutoLayout, 0, 3);
-        menuGrid.Controls.Add(btnTimeline, 1, 3);
 
         var btnRework = CreateFlatButton("🔄 재가공 생성", Palette.Bg800, Color.FromArgb(251, 146, 60));
         btnRework.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
@@ -585,34 +589,60 @@ public class WorkflowMainForm : Form
         btnHistory.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
         btnHistory.Click += async (s, e) => await ShowJobHistoryDialogAsync();
 
-        menuGrid.Controls.Add(btnRework, 0, 4);
-        menuGrid.Controls.Add(btnHistory, 1, 4);
-        menuGrid.Controls.Add(btnSaveDraft, 0, 5);
+        menuGrid.Controls.Add(btnGenDefault, 0, 0);
+        menuGrid.Controls.Add(btnProbecard, 1, 0);
+        menuGrid.Controls.Add(btnSaveTemplate, 0, 1);
+        menuGrid.Controls.Add(btnLoadTemplate, 1, 1);
+        menuGrid.Controls.Add(_btnConfirmPlan, 0, 2);
+        menuGrid.Controls.Add(_btnCompleteEntireJob, 1, 2); // '계획 확정·공유'와 '작업 완료' 완벽 분리 제공!
+        menuGrid.Controls.Add(btnExecuteSelected, 0, 3);
+        menuGrid.Controls.Add(btnAutoLayout, 1, 3);
+        menuGrid.Controls.Add(btnTimeline, 0, 4);
+        menuGrid.Controls.Add(btnRework, 1, 4);
+        menuGrid.Controls.Add(btnHistory, 0, 5);
         menuGrid.Controls.Add(btnClearPlan, 1, 5);
         var cardMenu = CreateCard("📋 워크플로우 제어 메뉴", menuGrid);
         panel.Controls.Add(cardMenu, 0, 0);
 
-        // Card 2: Work Orders & Parts List
+        // Card 2: Work Orders & Parts List (과거 작업 진입점 및 전체 검색 추가)
         var pnlOrderBody = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 2,
+            RowCount = 3,
             Margin = new Padding(0),
             Padding = new Padding(1)
         };
         pnlOrderBody.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
         pnlOrderBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 30f)); // Order combo
         pnlOrderBody.RowStyles.Add(new RowStyle(SizeType.Percent, 100f)); // Parts list
+        pnlOrderBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 32f)); // Action Buttons (과거 작업 & 전체 검색)
 
         _cboOrders = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList, BackColor = Palette.Bg850, ForeColor = Color.White, Font = new Font("맑은 고딕", 9f) };
         _cboOrders.SelectedIndexChanged += async (s, e) => await OnOrderSelectedAsync();
         pnlOrderBody.Controls.Add(_cboOrders, 0, 0);
 
         _lstParts = new ListBox { Dock = DockStyle.Fill, BackColor = Palette.Bg850, ForeColor = Palette.TextWhite, BorderStyle = BorderStyle.FixedSingle, Font = new Font("맑은 고딕", 9f) };
-        _lstParts.SelectedIndexChanged += (s, e) => OnPartSelected();
+        _lstParts.SelectedIndexChanged += async (s, e) => await OnPartSelectedIndexChangedAsync();
         _lstParts.DoubleClick += (s, e) => OnPartDoubleClicked();
         pnlOrderBody.Controls.Add(_lstParts, 0, 1);
+
+        // 하단 2개 진입 버튼 (부품별 과거 작업 조회 + 전체 다차원 검색)
+        var pnlPartActions = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = new Padding(0) };
+        pnlPartActions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
+        pnlPartActions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
+
+        var btnPartPast = CreateFlatButton("📜 부품 과거작업", Palette.Bg800, Color.FromArgb(245, 158, 11));
+        btnPartPast.Font = new Font("맑은 고딕", 8.0f, FontStyle.Bold);
+        btnPartPast.Click += async (s, e) => await OpenPartPastJobsDialogAsync();
+
+        var btnAllSearch = CreateFlatButton("🔍 전체 작업 검색", Palette.Bg800, Palette.AccentSky);
+        btnAllSearch.Font = new Font("맑은 고딕", 8.0f, FontStyle.Bold);
+        btnAllSearch.Click += async (s, e) => await OpenAllJobsSearchDialogAsync();
+
+        pnlPartActions.Controls.Add(btnPartPast, 0, 0);
+        pnlPartActions.Controls.Add(btnAllSearch, 1, 0);
+        pnlOrderBody.Controls.Add(pnlPartActions, 0, 2);
 
         var cardOrders = CreateCard("📦 작업지시서 및 대상 부품 목록", pnlOrderBody);
         panel.Controls.Add(cardOrders, 0, 1);
@@ -784,6 +814,8 @@ public class WorkflowMainForm : Form
             UpdateWorkflowStats();
         };
         _canvas.RequestGenerateDefaultWorkflow += () => GenerateStandardWorkflowForSelectedPart(confirmIfNotEmpty: true);
+
+        _canvas.RequestReturnToOngoingJob += async () => await ReturnToOngoingJobAsync();
 
         pnlCanvasContainer.Controls.Add(canvasToolbar, 0, 0);
         pnlCanvasContainer.Controls.Add(_canvas, 0, 1);
@@ -1475,73 +1507,132 @@ public class WorkflowMainForm : Form
         }
     }
 
-    private void OnPartSelected()
+    private async Task OnPartSelectedIndexChangedAsync()
     {
+        if (IsDisposed || Disposing) return;
+        if (_isSwitchingPart) return;
         if (_lstParts.SelectedIndex < 0) return;
 
-        // Try load existing workflow draft from local cache
-        string cacheKey = GetCurrentPartCacheKey();
-        string cacheFile = Path.Combine(_localWorkflowDir, $"{cacheKey}.json");
+        int newIndex = _lstParts.SelectedIndex;
+        if (newIndex == _previousPartIndex && _currentJob != null && !_canvas.IsReadOnly) return;
 
-        if (File.Exists(cacheFile))
+        await SwitchPartAsync(newIndex);
+    }
+
+    private void OnPartSelected()
+    {
+        _ = OnPartSelectedIndexChangedAsync();
+    }
+
+    /// <summary>
+    /// [요구사항 1] 부품별로 진행 작업을 완벽 분리합니다.
+    /// 현재 작업의 저장을 먼저 완벽히 마친 뒤 선택한 부품의 진행 작업을 불러오며,
+    /// 저장 실패 시 전환을 중단하고 실패 사실을 알립니다.
+    /// </summary>
+    private async Task SwitchPartAsync(int newIndex)
+    {
+        _isSwitchingPart = true;
+        try
         {
-            try
+            // 1. 과거 작업 열람 중이었다면 배너 닫기 및 복귀 준비
+            CloseHistoricalViewBanner();
+
+            // 2. 현재 작업의 미완료 지연 저장이 있다면 즉시 취소하고 동기 저장 수행!
+            if (_currentJob != null && !_canvas.IsReadOnly)
             {
-                string json = File.ReadAllText(cacheFile);
-                var data = JsonSerializer.Deserialize<WorkflowData>(json);
-                if (data != null && data.Nodes.Count > 0)
+                _storageManager.CancelPendingDebounceSave();
+                _currentJob.Nodes = _canvas.Nodes.ToList();
+                _currentJob.Edges = _canvas.Edges.ToList();
+                _currentJob.TitleBoxes = _canvas.TitleBoxes.ToList();
+                _currentJob.IsConfirmed = _canvas.IsWorkflowConfirmed;
+                _currentJob.ConfirmedBy = _canvas.ConfirmedInfoText;
+
+                bool saveOk = await _storageManager.SaveJobAsync(_currentJob, _session.DisplayName);
+                if (!saveOk)
                 {
-                    _canvas.Clear();
-                    _canvas.Nodes.AddRange(data.Nodes);
-                    _canvas.Edges.AddRange(data.Edges);
-                    if (data.TitleBoxes != null) _canvas.TitleBoxes.AddRange(data.TitleBoxes);
-                    _canvas.IsWorkflowConfirmed = data.IsConfirmed;
-                    _canvas.ConfirmedInfoText = data.ConfirmedBy;
-                    _canvas.Invalidate();
-                    _canvas.SelectedNode = _canvas.Nodes.FirstOrDefault();
-                    _detailPanel.BindNode(_canvas.SelectedNode);
-                    UpdateWorkflowStats();
+                    MessageBox.Show("현재 작업 저장에 실패하여 부품 전환을 중단합니다.\r\n작업 데이터가 보존된 현재 화면을 유지합니다.", 
+                        "저장 실패 - 부품 전환 중단", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    
+                    // 롤백: 이전 부품 선택으로 복원
+                    if (_previousPartIndex >= 0 && _previousPartIndex < _lstParts.Items.Count)
+                    {
+                        _lstParts.SelectedIndex = _previousPartIndex;
+                    }
                     return;
                 }
             }
-            catch { }
-        }
 
-        // Check if there is an active autosaved workflow so user work is NEVER lost!
-        string activeFile = Path.Combine(_localWorkflowDir, "autosave_current_active.json");
-        if (File.Exists(activeFile))
-        {
-            try
+            // 3. 신규 선택 부품 정보 추출
+            string currentOrder = _cachedOrders.Count > 0 && _cboOrders.SelectedIndex >= 0
+                ? _cachedOrders[_cboOrders.SelectedIndex].GetProperty("orderNumber").GetString() ?? "" : "";
+            int orderId = _cachedOrders.Count > 0 && _cboOrders.SelectedIndex >= 0
+                ? (_cachedOrders[_cboOrders.SelectedIndex].TryGetProperty("id", out var oid) ? oid.GetInt32() : 0) : 0;
+            string currentPart = _lstParts.Items[newIndex]?.ToString() ?? "";
+            int partId = 0;
+
+            // 4. 이 부품의 최신 '진행 중' 작업 조회
+            var ongoingJob = await _storageManager.GetActiveJobForPartAsync(currentOrder, currentPart, orderId, partId);
+
+            if (ongoingJob != null)
             {
-                string json = File.ReadAllText(activeFile);
-                var data = JsonSerializer.Deserialize<WorkflowData>(json);
-                if (data != null && data.Nodes.Count > 0)
+                // 기존 진행 작업 완벽 복원
+                _currentJob = ongoingJob;
+                LoadJobIntoCanvas(ongoingJob, isReadOnly: false);
+            }
+            else
+            {
+                // 진행 작업이 없으면 신규 Job 생성 (빈 캔버스)
+                _currentJob = _storageManager.CreateJob(currentOrder, currentPart, orderId, partId, author: _session.DisplayName);
+                _canvas.Clear();
+                _canvas.IsReadOnly = false;
+                _canvas.ReadOnlyBannerText = "";
+                ResetWorkflowConfirmation();
+                UpdateWorkflowStats();
+            }
+
+            await _storageManager.SetLastActiveJobIdAsync(_currentJob.JobId);
+            _previousPartIndex = newIndex;
+        }
+        finally
+        {
+            _isSwitchingPart = false;
+        }
+    }
+
+    /// <summary>
+    /// 재실행 시 복원된 작업의 작업지시서 및 부품 선택 상태를 캔버스와 일치시킵니다.
+    /// </summary>
+    private void SyncOrderAndPartSelection(string orderNumber, string partName)
+    {
+        try
+        {
+            if (!string.IsNullOrEmpty(orderNumber))
+            {
+                for (int i = 0; i < _cboOrders.Items.Count; i++)
                 {
-                    _canvas.Clear();
-                    _canvas.Nodes.AddRange(data.Nodes);
-                    _canvas.Edges.AddRange(data.Edges);
-                    if (data.TitleBoxes != null) _canvas.TitleBoxes.AddRange(data.TitleBoxes);
-                    _canvas.IsWorkflowConfirmed = data.IsConfirmed;
-                    _canvas.ConfirmedInfoText = data.ConfirmedBy;
-                    _canvas.Invalidate();
-                    _canvas.SelectedNode = _canvas.Nodes.FirstOrDefault();
-                    _detailPanel.BindNode(_canvas.SelectedNode);
-                    UpdateWorkflowStats();
-                    return;
+                    if (_cboOrders.Items[i]?.ToString()?.Contains(orderNumber) == true)
+                    {
+                        _cboOrders.SelectedIndex = i;
+                        break;
+                    }
                 }
             }
-            catch { }
+            if (!string.IsNullOrEmpty(partName))
+            {
+                for (int i = 0; i < _lstParts.Items.Count; i++)
+                {
+                    if (_lstParts.Items[i]?.ToString()?.Contains(partName) == true)
+                    {
+                        _isSwitchingPart = true;
+                        _lstParts.SelectedIndex = i;
+                        _previousPartIndex = i;
+                        _isSwitchingPart = false;
+                        break;
+                    }
+                }
+            }
         }
-
-        // If currently nodes exist on canvas, keep them and auto-save instead of wiping out!
-        if (_canvas.Nodes.Count > 0)
-        {
-            AutoSaveWorkflow();
-            return;
-        }
-
-        _canvas.Clear();
-        UpdateWorkflowStats();
+        catch { }
     }
 
     private string GetCurrentPartCacheKey()
@@ -3515,15 +3606,20 @@ public class WorkflowMainForm : Form
 
     private void AutoSaveWorkflow()
     {
-        if (_canvas == null || _canvas.Nodes.Count == 0) return;
+        if (_canvas == null || _canvas.IsReadOnly || _isSwitchingPart) return;
 
         string currentOrder = _cachedOrders.Count > 0 && _cboOrders.SelectedIndex >= 0
             ? _cachedOrders[_cboOrders.SelectedIndex].GetProperty("orderNumber").GetString() ?? "" : "";
+        int orderId = _cachedOrders.Count > 0 && _cboOrders.SelectedIndex >= 0
+            ? (_cachedOrders[_cboOrders.SelectedIndex].TryGetProperty("id", out var oid) ? oid.GetInt32() : 0) : 0;
         string currentPart = _lstParts.SelectedItem?.ToString() ?? "";
 
-        if (_currentJob == null || (!string.IsNullOrEmpty(currentOrder) && _currentJob.OrderNumber != currentOrder))
+        // 부품이나 작업지시서가 변경되었거나 Job이 없으면 신규 매핑
+        if (_currentJob == null || 
+            (!string.IsNullOrEmpty(currentOrder) && !_currentJob.OrderNumber.Equals(currentOrder, StringComparison.OrdinalIgnoreCase)) ||
+            (!string.IsNullOrEmpty(currentPart) && !_currentJob.PartName.Equals(currentPart, StringComparison.OrdinalIgnoreCase)))
         {
-            _currentJob = _storageManager.CreateJob(currentOrder, currentPart, author: _session.DisplayName);
+            _currentJob = _storageManager.CreateJob(currentOrder, currentPart, orderId, 0, author: _session.DisplayName);
         }
 
         // [요구사항 2] 노드의 작업 소속 유지 및 엣지 교차 참조
@@ -3541,47 +3637,54 @@ public class WorkflowMainForm : Form
             if (string.IsNullOrEmpty(edge.ToJobId)) edge.ToJobId = tn?.JobId ?? activeJobId;
         }
 
-        // [요구사항 3] 디바운스(Debounce 600ms) 지연 저장 실행
+        // [요구사항 3] 디바운스(Debounce 600ms) 지연 저장 실행 (마지막 노드를 삭제해 빈 화면이 된 경우도 확실히 저장)
+        var targetJob = _currentJob;
+        var snapshotNodes = _canvas.Nodes.ToList();
+        var snapshotEdges = _canvas.Edges.ToList();
+        var snapshotBoxes = _canvas.TitleBoxes.ToList();
+        bool isConfirmed = _canvas.IsWorkflowConfirmed;
+        string confirmedInfo = _canvas.ConfirmedInfoText;
+
         _storageManager.RequestDebouncedSave(async () =>
         {
-            if (_canvas == null || _currentJob == null) return;
-
-            var snapshotNodes = _canvas.Nodes.ToList();
-            var snapshotEdges = _canvas.Edges.ToList();
-            var snapshotBoxes = _canvas.TitleBoxes.ToList();
+            if (targetJob == null) return;
 
             // [요구사항 4] 계획 버전 감지 및 보존 (노드 위치 이동은 제외, 공정/순서/장비/작업자 변경 시 기록)
-            await _storageManager.RecordPlanVersionIfChangedAsync(
-                _currentJob,
-                snapshotNodes,
-                snapshotEdges,
-                _session.DisplayName,
-                "작업 워크플로우 실시간 공정계획 변경"
-            );
+            if (snapshotNodes.Count > 0)
+            {
+                await _storageManager.RecordPlanVersionIfChangedAsync(
+                    targetJob,
+                    snapshotNodes,
+                    snapshotEdges,
+                    _session.DisplayName,
+                    "작업 워크플로우 실시간 공정계획 변경"
+                );
+            }
 
-            _currentJob.Nodes = snapshotNodes;
-            _currentJob.Edges = snapshotEdges;
-            _currentJob.TitleBoxes = snapshotBoxes;
-            _currentJob.IsConfirmed = _canvas.IsWorkflowConfirmed;
-            _currentJob.ConfirmedBy = _canvas.ConfirmedInfoText;
+            targetJob.Nodes = snapshotNodes;
+            targetJob.Edges = snapshotEdges;
+            targetJob.TitleBoxes = snapshotBoxes;
+            targetJob.IsConfirmed = isConfirmed;
+            targetJob.ConfirmedBy = confirmedInfo;
 
             // 작업 단위 디렉토리에 안전 저장 (임시파일 교체 + .bak 보존)
-            await _storageManager.SaveJobAsync(_currentJob, _session.DisplayName);
+            await _storageManager.SaveJobAsync(targetJob, _session.DisplayName);
+            await _storageManager.SetLastActiveJobIdAsync(targetJob.JobId);
 
             // 하위 호환성 레거시 캐시 동기화
             try
             {
                 var legacyData = new WorkflowData
                 {
-                    JobId = _currentJob.JobId,
-                    OrderNumber = _currentJob.OrderNumber,
-                    PartName = _currentJob.PartName,
+                    JobId = targetJob.JobId,
+                    OrderNumber = targetJob.OrderNumber,
+                    PartName = targetJob.PartName,
                     Nodes = snapshotNodes,
                     Edges = snapshotEdges,
                     TitleBoxes = snapshotBoxes,
                     LastSavedAt = DateTime.Now,
-                    IsConfirmed = _canvas.IsWorkflowConfirmed,
-                    ConfirmedBy = _canvas.ConfirmedInfoText
+                    IsConfirmed = isConfirmed,
+                    ConfirmedBy = confirmedInfo
                 };
                 string legacyJson = JsonSerializer.Serialize(legacyData, new JsonSerializerOptions { WriteIndented = true });
                 string activeFile = Path.Combine(_localWorkflowDir, "autosave_current_active.json");
@@ -3623,6 +3726,9 @@ public class WorkflowMainForm : Form
                     _canvas.SelectedNode = _canvas.Nodes.FirstOrDefault();
                     _detailPanel.BindNode(_canvas.SelectedNode);
                     UpdateWorkflowStats();
+
+                    // 작업지시서 및 부품 선택 상태를 캔버스와 동기화
+                    SyncOrderAndPartSelection(job.OrderNumber, job.PartName);
 
                     if (_lblAutoSaveBadge != null)
                     {
@@ -4046,6 +4152,212 @@ public class WorkflowMainForm : Form
                 _btnToggleRightSidebar.BackColor = Palette.Bg800;
                 _btnToggleRightSidebar.ForeColor = Color.FromArgb(56, 189, 248);
             }
+        }
+    }
+
+
+    // =========================================================================
+    // [요구사항 2 & 3] 작업 완료 마감, 과거 작업 열람 및 복귀 기능
+    // =========================================================================
+    /// <summary>
+    /// [요구사항 2] 전체 작업을 완료 마감하고 확정 스냅샷을 생성합니다.
+    /// '계획 확정·공유'와 분리되어 독립적으로 동작하며, 완료본은 읽기 전용으로 보존됩니다.
+    /// </summary>
+    private async Task CompleteEntireJobAsync()
+    {
+        if (_currentJob == null || _canvas.Nodes.Count == 0)
+        {
+            MessageBox.Show("완료 마감할 워크플로우 공정이 없습니다.", "완료 불가", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        if (_canvas.IsReadOnly)
+        {
+            MessageBox.Show("이미 완료 마감된 작업입니다.", "안내", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var dr = MessageBox.Show(
+            $"현재 작업 [{_currentJob.JobId}]\r\n" +
+            $"작업지시: {_currentJob.OrderNumber}\r\n" +
+            $"대상부품: {_currentJob.PartName}\r\n\r\n" +
+            "이 작업의 모든 공정을 '최종 작업 완료'로 마감하시겠습니까?\r\n\r\n" +
+            "※ 완료 시점의 카드 배치, 연결선, 공정 상태, 담당자/장비, 실행 이력, 첨부파일이 확정 스냅샷으로 영구 보존되며 읽기 전용으로 전환됩니다.",
+            "전체 작업 완료 마감 확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+
+        if (dr != DialogResult.Yes) return;
+
+        // 1. 대기 중인 지연 저장 취소 및 최종 저장
+        _storageManager.CancelPendingDebounceSave();
+        _currentJob.Nodes = _canvas.Nodes.ToList();
+        _currentJob.Edges = _canvas.Edges.ToList();
+        _currentJob.TitleBoxes = _canvas.TitleBoxes.ToList();
+        _currentJob.Status = "Completed";
+        _currentJob.CompletedAt = DateTime.Now;
+
+        // 모든 노드 상태를 완료(Completed)로 표시
+        foreach (var node in _currentJob.Nodes)
+        {
+            if (node.Status != NodeStatus.Completed)
+                node.Status = NodeStatus.Completed;
+        }
+
+        bool saveOk = await _storageManager.SaveJobAsync(_currentJob, _session.DisplayName);
+        if (!saveOk)
+        {
+            MessageBox.Show("작업 완료 저장에 실패하여 완료 처리가 취소되었습니다.", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            _currentJob.Status = "진행중";
+            return;
+        }
+
+        // 2. 확정 스냅샷 및 첨부파일 보관 사본 생성
+        try
+        {
+            await _storageManager.CreateConfirmedSnapshotAsync(_currentJob, _session.DisplayName);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"완료 스냅샷 보관 중 오류가 발생했습니다: {ex.Message}", "경고", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+
+        // 3. 캔버스를 읽기 전용 모드로 전환
+        _canvas.IsReadOnly = true;
+        _canvas.ReadOnlyBannerText = $"🔒 [작업 완료 마감됨 - 읽기 전용] ({_currentJob.OrderNumber} / {_currentJob.PartName} | 완료일시: {_currentJob.CompletedAt:yyyy-MM-dd HH:mm})";
+        _canvas.Invalidate();
+        UpdateWorkflowStats();
+
+        MessageBox.Show(
+            $"작업이 성공적으로 최종 완료 마감되었습니다!\r\n\r\n" +
+            $"* 작업 식별자: {_currentJob.JobId}\r\n" +
+            $"* 완료 일시: {_currentJob.CompletedAt:yyyy-MM-dd HH:mm:ss}\r\n\r\n" +
+            "차후 생산 시 좌측의 '부품 과거작업' 또는 '전체 작업 검색'에서 언제든 당시 모습 그대로 열람할 수 있습니다.",
+            "전체 작업 완료 확정 완료", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
+    /// <summary>
+    /// [요구사항 3] 현재 선택된 부품의 과거 완료 이력 목록을 최신순으로 조회합니다.
+    /// </summary>
+    private async Task OpenPartPastJobsDialogAsync()
+    {
+        string currentOrder = _cachedOrders.Count > 0 && _cboOrders.SelectedIndex >= 0
+            ? _cachedOrders[_cboOrders.SelectedIndex].GetProperty("orderNumber").GetString() ?? "" : "";
+        string currentPart = _lstParts.SelectedItem?.ToString() ?? "";
+
+        if (string.IsNullOrEmpty(currentPart))
+        {
+            MessageBox.Show("과거 작업을 조회할 부품을 좌측 목록에서 먼저 선택해 주세요.", "부품 미선택", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        using var dlg = new JobSearchDialog(_storageManager, currentOrder, currentPart);
+        if (dlg.ShowDialog(this) == DialogResult.OK && dlg.SelectedJob != null)
+        {
+            await OpenHistoricalJobViewAsync(dlg.SelectedJob);
+        }
+    }
+
+    /// <summary>
+    /// [요구사항 3] 지시서나 부품을 몰라도 전체 작업을 다차원으로 검색합니다.
+    /// </summary>
+    private async Task OpenAllJobsSearchDialogAsync()
+    {
+        using var dlg = new JobSearchDialog(_storageManager);
+        if (dlg.ShowDialog(this) == DialogResult.OK && dlg.SelectedJob != null)
+        {
+            await OpenHistoricalJobViewAsync(dlg.SelectedJob);
+        }
+    }
+
+    /// <summary>
+    /// 과거 완료 작업을 캔버스에 읽기 전용으로 열람하고 복귀 배너를 띄웁니다.
+    /// </summary>
+    private async Task OpenHistoricalJobViewAsync(WorkUnitJob job)
+    {
+        // 1. 현재 작업이 진행 중이었다면 먼저 안전 저장
+        if (_currentJob != null && !_canvas.IsReadOnly)
+        {
+            _storageManager.CancelPendingDebounceSave();
+            _currentJob.Nodes = _canvas.Nodes.ToList();
+            _currentJob.Edges = _canvas.Edges.ToList();
+            _currentJob.TitleBoxes = _canvas.TitleBoxes.ToList();
+            await _storageManager.SaveJobAsync(_currentJob, _session.DisplayName);
+            _activeOngoingJob = _currentJob; // 복귀를 위해 임시 보관!
+        }
+
+        // 2. 과거 작업 로드 및 읽기 전용 적용
+        _currentJob = job;
+        LoadJobIntoCanvas(job, isReadOnly: true);
+        _canvas.ReadOnlyBannerText = $"📜 과거 작업 열람 중: [{job.JobId}] {job.OrderNumber} - {job.PartName} (상태: {job.Status})";
+
+        // 3. 복귀 플로팅 배너 표시
+        ShowHistoricalReturnBanner(job);
+    }
+
+    private void ShowHistoricalReturnBanner(WorkUnitJob job)
+    {
+        _canvas.ReadOnlyBannerText = $"📜 과거 완료 작업 열람 중: [{job.JobId}] {job.OrderNumber} - {job.PartName} | 당시 워크플로우를 그대로 확인 중입니다.";
+        _canvas.Invalidate();
+    }
+
+    private void CloseHistoricalViewBanner()
+    {
+        if (_canvas != null)
+        {
+            _canvas.ReadOnlyBannerText = "";
+            _canvas.Invalidate();
+        }
+        if (_pnlHistoricalBanner != null)
+        {
+            try
+            {
+                _canvas.Controls.Remove(_pnlHistoricalBanner);
+                _pnlHistoricalBanner.Dispose();
+            }
+            catch { }
+            _pnlHistoricalBanner = null;
+        }
+    }
+
+    private async Task ReturnToOngoingJobAsync()
+    {
+        CloseHistoricalViewBanner();
+
+        if (_activeOngoingJob != null)
+        {
+            _currentJob = _activeOngoingJob;
+            _activeOngoingJob = null;
+            LoadJobIntoCanvas(_currentJob, isReadOnly: false);
+            await _storageManager.SetLastActiveJobIdAsync(_currentJob.JobId);
+        }
+        else if (_lstParts.SelectedIndex >= 0)
+        {
+            await SwitchPartAsync(_lstParts.SelectedIndex);
+        }
+    }
+
+    private void LoadJobIntoCanvas(WorkUnitJob job, bool isReadOnly)
+    {
+        bool prevSwitching = _isSwitchingPart;
+        _isSwitchingPart = true;
+        try
+        {
+            _canvas.IsReadOnly = isReadOnly;
+            _canvas.Clear();
+        _canvas.Nodes.AddRange(job.Nodes);
+        _canvas.Edges.AddRange(job.Edges);
+        _canvas.TitleBoxes.AddRange(job.TitleBoxes);
+        _canvas.IsWorkflowConfirmed = job.IsConfirmed;
+        _canvas.ConfirmedInfoText = job.ConfirmedBy;
+        _canvas.IsReadOnly = isReadOnly;
+        _canvas.ReadOnlyBannerText = isReadOnly ? $"🔒 [읽기 전용 모드] [{job.JobId}]" : "";
+        _canvas.Invalidate();
+        _canvas.SelectedNode = _canvas.Nodes.FirstOrDefault();
+        _detailPanel.BindNode(_canvas.SelectedNode);
+        UpdateWorkflowStats();
+        }
+        finally
+        {
+            _isSwitchingPart = prevSwitching;
         }
     }
 

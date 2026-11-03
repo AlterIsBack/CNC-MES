@@ -1068,6 +1068,7 @@ public class NodeDetailPanel : UserControl
 
     public void SetEmptyState()
     {
+        if (IsDisposed || Disposing) return;
         _currentNode = null;
         _currentNodes.Clear();
         _isBinding = true;

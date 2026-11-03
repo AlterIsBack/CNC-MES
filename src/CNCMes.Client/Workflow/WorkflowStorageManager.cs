@@ -226,6 +226,45 @@ public class WorkflowStorageManager
         }
     }
 
+    /// <summary>
+    /// 부품 전환 등 즉시 저장이 필요할 때 대기 중인 지연 자동 저장을 취소합니다.
+    /// </summary>
+    public void CancelPendingDebounceSave()
+    {
+        lock (_debounceSync)
+        {
+            _debounceTimer?.Dispose();
+            _debounceTimer = null;
+            _pendingSaveAction = null;
+        }
+    }
+
+    /// <summary>
+    /// 대기 중인 지연 자동 저장이 있다면 즉시 실행하고 완료를 대기합니다.
+    /// </summary>
+    public async Task FlushDebouncedSaveAsync()
+    {
+        Func<Task>? actionToRun = null;
+        lock (_debounceSync)
+        {
+            _debounceTimer?.Dispose();
+            _debounceTimer = null;
+            actionToRun = _pendingSaveAction;
+            _pendingSaveAction = null;
+        }
+        if (actionToRun != null)
+        {
+            try
+            {
+                await actionToRun();
+            }
+            catch (Exception ex)
+            {
+                OnStatusChanged(SaveState.Failed, $"즉시저장 오류: {ex.Message}");
+            }
+        }
+    }
+
     // =========================================================================
     // 4. 계획 버전과 실행 이력 분리 관리
     // =========================================================================
@@ -564,6 +603,38 @@ public class WorkflowStorageManager
     // =========================================================================
     // 7. 다차원 조회 (작업지시서, 부품, 작업자, 장비, 상태, 날짜)
     // =========================================================================
+    /// <summary>
+    /// 지정된 작업지시서와 부품의 가장 최신 '진행 중(미완료)' 작업을 조회합니다.
+    /// </summary>
+    public async Task<WorkUnitJob?> GetActiveJobForPartAsync(string orderNumber, string partName, int orderId = 0, int partId = 0)
+    {
+        var allJobs = await LoadAllJobsAsync();
+        // 1. 고유 ID 일치 우선 (orderId, partId가 유효한 경우)
+        var match = allJobs
+            .Where(j => !j.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase) && !j.Status.Equals("완료", StringComparison.OrdinalIgnoreCase))
+            .Where(j => (orderId > 0 && j.OrderId == orderId && partId > 0 && j.PartId == partId) ||
+                        (!string.IsNullOrEmpty(orderNumber) && j.OrderNumber.Equals(orderNumber, StringComparison.OrdinalIgnoreCase) &&
+                         !string.IsNullOrEmpty(partName) && j.PartName.Equals(partName, StringComparison.OrdinalIgnoreCase)))
+            .OrderByDescending(j => j.LastSavedAt)
+            .FirstOrDefault();
+        return match;
+    }
+
+    /// <summary>
+    /// 지정된 부품의 과거 완료된 작업(Completed) 목록을 최신순으로 조회합니다.
+    /// </summary>
+    public async Task<List<WorkUnitJob>> GetCompletedJobsForPartAsync(string orderNumber, string partName, int orderId = 0, int partId = 0)
+    {
+        var allJobs = await LoadAllJobsAsync();
+        return allJobs
+            .Where(j => j.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase) || j.Status.Equals("완료", StringComparison.OrdinalIgnoreCase))
+            .Where(j => (orderId > 0 && j.OrderId == orderId && partId > 0 && j.PartId == partId) ||
+                        (!string.IsNullOrEmpty(orderNumber) && j.OrderNumber.Equals(orderNumber, StringComparison.OrdinalIgnoreCase) &&
+                         !string.IsNullOrEmpty(partName) && j.PartName.Equals(partName, StringComparison.OrdinalIgnoreCase)))
+            .OrderByDescending(j => j.CompletedAt ?? j.LastSavedAt)
+            .ToList();
+    }
+
     public async Task<List<WorkUnitJob>> QueryJobsAsync(JobQueryFilter filter)
     {
         var allJobs = await LoadAllJobsAsync();
@@ -731,6 +802,11 @@ public class WorkflowStorageManager
     // =========================================================================
     // 활성 세션 보존 및 복원 (프로그램 재실행 시 복원)
     // =========================================================================
+    public async Task SetLastActiveJobIdAsync(string currentJobId)
+    {
+        await UpdateActiveSessionAsync(currentJobId);
+    }
+
     private async Task UpdateActiveSessionAsync(string currentJobId)
     {
         string sessionFile = Path.Combine(_rootDir, "active_session.json");

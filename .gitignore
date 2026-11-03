@@ -31,3 +31,5 @@ Thumbs.db
 *.log
 scratch/
 temp/
+
+server_info.json

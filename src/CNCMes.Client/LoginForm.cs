@@ -30,7 +30,7 @@ public class LoginForm : Form
 
     private void InitializeComponents()
     {
-        Text = "CNC-MES 현장 작업자 클라이언트 v1.6.1 (내부망 전용)";
+        Text = "CNC-MES 현장 작업자 클라이언트 v1.6.2 (내부망 전용)";
         ClientSize = new Size(550, 620);
         MinimumSize = new Size(550, 620);
         StartPosition = FormStartPosition.CenterScreen;
@@ -272,11 +272,14 @@ public class LoginForm : Form
 
     private async Task InitializeConnectionOnStartup()
     {
+        // 시작 시 UI 프리징/멈춤을 방지하기 위해 로컬/설정 서버를 가볍게 1회만 확인합니다.
         bool ok = await CheckConnection();
         if (!ok)
         {
-            // Automatically discover the server on the offline LAN when initial connection (e.g., localhost) fails!
-            await AutoDiscoverServer(showNotFoundPopup: false);
+            _lblConnStatus.Text = "× 서버 미연결 (서버 구동 필요)";
+            _lblConnStatus.ForeColor = Color.FromArgb(248, 113, 113);
+            _lblConnGuide.Text = "💡 '1_서버실행.bat'를 먼저 실행하시거나, [🔍 사내망 서버 자동 검색]을 클릭하세요.";
+            _lblConnGuide.ForeColor = Color.FromArgb(248, 113, 113);
         }
     }
 
@@ -396,7 +399,7 @@ public class LoginForm : Form
             return;
         }
 
-        // Launch Modern Workflow Client Form (v1.6.1)
+        // Launch Modern Workflow Client Form (v1.6.2)
         Hide();
         var workerForm = new WorkflowMainForm(_api, session);
         workerForm.FormClosed += (s, e) => Close();
