@@ -348,7 +348,17 @@ public class WorkflowCanvasControl : UserControl
         // Prevent simple cycles
         if (Edges.Any(e => e.FromNodeId == toId && e.ToNodeId == fromId)) return;
 
-        var edge = new WorkflowEdge { FromNodeId = fromId, ToNodeId = toId, Type = type, Label = label };
+        var fromNode = Nodes.FirstOrDefault(n => n.Id == fromId);
+        var toNode = Nodes.FirstOrDefault(n => n.Id == toId);
+        var edge = new WorkflowEdge 
+        { 
+            FromNodeId = fromId, 
+            ToNodeId = toId, 
+            FromJobId = fromNode?.JobId ?? "",
+            ToJobId = toNode?.JobId ?? "",
+            Type = type, 
+            Label = label 
+        };
         Edges.Add(edge);
         Invalidate();
         WorkflowChanged?.Invoke();
@@ -659,6 +669,7 @@ public class WorkflowCanvasControl : UserControl
                 MaterialSize = src.MaterialSize,
                 MaterialType = src.MaterialType,
                 FixingMethod = src.FixingMethod,
+                JobId = src.JobId,
                 X = src.X + 45f,
                 Y = src.Y + 45f,
                 Width = src.Width,
@@ -677,6 +688,8 @@ public class WorkflowCanvasControl : UserControl
             {
                 FromNodeId = idMap[edge.FromNodeId],
                 ToNodeId = idMap[edge.ToNodeId],
+                FromJobId = edge.FromJobId,
+                ToJobId = edge.ToJobId,
                 Type = edge.Type,
                 Label = edge.Label
             });

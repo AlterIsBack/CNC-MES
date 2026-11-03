@@ -105,6 +105,8 @@ public class WorkflowMainForm : Form
 
     // Local workflow cache folder
     private readonly string _localWorkflowDir;
+    private readonly WorkflowStorageManager _storageManager;
+    private WorkUnitJob? _currentJob;
 
     public WorkflowMainForm(ApiClient api, UserSession session)
     {
@@ -113,6 +115,20 @@ public class WorkflowMainForm : Form
 
         _localWorkflowDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CNCMes", "workflows");
         try { Directory.CreateDirectory(_localWorkflowDir); } catch { }
+
+        _storageManager = new WorkflowStorageManager(_localWorkflowDir);
+        _storageManager.StatusChanged += (s, e) =>
+        {
+            if (_lblAutoSaveBadge == null || _lblAutoSaveBadge.IsDisposed) return;
+            if (InvokeRequired)
+            {
+                try { Invoke(new Action(() => UpdateSaveBadge(e))); } catch { }
+            }
+            else
+            {
+                UpdateSaveBadge(e);
+            }
+        };
 
         if (!string.IsNullOrEmpty(_session.MachineId))
             _currentMachineId = _session.MachineId;
@@ -478,25 +494,22 @@ public class WorkflowMainForm : Form
             Padding = new Padding(0)
         };
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 265f)); // Card 1: 10 Action Buttons (Height 265px, 5 rows)
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 295f)); // Card 1: 12 Action Buttons (Height 295px, 6 rows)
         panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));  // Card 2: Orders & Parts List (Full remaining height)
 
-        // Card 1: Workflow Menu Buttons (10 Action Buttons: Standard, Probecard, Template Save/Load, Execution, Layout, Draft, Reset)
+        // Card 1: Workflow Menu Buttons (12 Action Buttons: Standard, Probecard, Template Save/Load, Execution, Layout, Rework, History, Draft, Reset)
         var menuGrid = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 5,
+            RowCount = 6,
             Margin = new Padding(2, 4, 2, 2),
             Padding = new Padding(1)
         };
         menuGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
         menuGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
-        menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 20f));
-        menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 20f));
-        menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 20f));
-        menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 20f));
-        menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 20f));
+        for (int r = 0; r < 6; r++)
+            menuGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 16.66f));
 
         var btnGenDefault = CreateFlatButton("⚡ 기본 워크플로우", Palette.Bg800, Palette.AccentSky);
         btnGenDefault.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
@@ -554,8 +567,19 @@ public class WorkflowMainForm : Form
         menuGrid.Controls.Add(btnExecuteSelected, 1, 2);
         menuGrid.Controls.Add(btnAutoLayout, 0, 3);
         menuGrid.Controls.Add(btnTimeline, 1, 3);
-        menuGrid.Controls.Add(btnSaveDraft, 0, 4);
-        menuGrid.Controls.Add(btnClearPlan, 1, 4);
+
+        var btnRework = CreateFlatButton("🔄 재가공 생성", Palette.Bg800, Color.FromArgb(251, 146, 60));
+        btnRework.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
+        btnRework.Click += async (s, e) => await CreateReworkWorkflowActionAsync();
+
+        var btnHistory = CreateFlatButton("📜 계획/이력 조회", Palette.Bg800, Color.FromArgb(147, 197, 253));
+        btnHistory.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
+        btnHistory.Click += async (s, e) => await ShowJobHistoryDialogAsync();
+
+        menuGrid.Controls.Add(btnRework, 0, 4);
+        menuGrid.Controls.Add(btnHistory, 1, 4);
+        menuGrid.Controls.Add(btnSaveDraft, 0, 5);
+        menuGrid.Controls.Add(btnClearPlan, 1, 5);
         var cardMenu = CreateCard("📋 워크플로우 제어 메뉴", menuGrid);
         panel.Controls.Add(cardMenu, 0, 0);
 
@@ -2513,8 +2537,20 @@ public class WorkflowMainForm : Form
             if (confirm != DialogResult.Yes) return;
         }
 
-        // 1. Save local confirmed draft
+        // 1. Save and Create Immutable Confirmed Snapshot
         SaveWorkflowDraftLocally(silent: true);
+        if (_currentJob != null)
+        {
+            try
+            {
+                var snapshot = await _storageManager.CreateConfirmedSnapshotAsync(_currentJob, _session.DisplayName);
+                System.Diagnostics.Debug.WriteLine($"[Confirmed Snapshot Created] ID={snapshot.SnapshotId}");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Snapshot Error] {ex.Message}");
+            }
+        }
 
         // 2. Broadcast / Log plan confirmation to existing Server API
         string orderNo = _canvas.Nodes[0].OrderNumber;
@@ -2852,6 +2888,29 @@ public class WorkflowMainForm : Form
                 NodeStatus.Issue => $"[이슈] {node.Title}",
                 _ => $"[대기] {node.Title}"
             };
+
+            // 0. Record Execution History (Immutable & Persistent across plan modifications/node deletions)
+            try
+            {
+                var execRecord = new ExecutionHistoryRecord
+                {
+                    JobId = !string.IsNullOrEmpty(node.JobId) ? node.JobId : (_currentJob?.JobId ?? ""),
+                    NodeId = node.Id,
+                    NodeTitle = node.Title,
+                    MachineId = node.MachineId,
+                    WorkerName = _session.DisplayName,
+                    EventType = newStatus.ToString(),
+                    Status = serverStatus,
+                    Timestamp = DateTime.Now,
+                    ActualStartAt = node.StartedAt,
+                    ActualEndAt = node.CompletedAt,
+                    InspectionDetails = node.Category == NodeCategory.Inspection ? node.Details : "",
+                    IssueDetails = newStatus == NodeStatus.Issue ? (node.IssueOccurredDetails + " " + node.Details) : "",
+                    Note = statusPrompt
+                };
+                await _storageManager.RecordExecutionHistoryAsync(execRecord);
+            }
+            catch { }
 
             // 1. Call existing Server API: AddManualWorkLogAsync
             await _api.AddManualWorkLogAsync(
@@ -3362,56 +3421,149 @@ public class WorkflowMainForm : Form
     }
 
     // =========================================================================
-    // REALTIME AUTO-SAVE & RECOVERY SYSTEM
+    // REALTIME AUTO-SAVE & RECOVERY SYSTEM (JOB-UNIT & DEBOUNCE BASED)
     // =========================================================================
+    private void UpdateSaveBadge(SaveStatusEventArgs e)
+    {
+        if (_lblAutoSaveBadge == null || _lblAutoSaveBadge.IsDisposed) return;
+        switch (e.State)
+        {
+            case SaveState.Saving:
+                _lblAutoSaveBadge.Text = "💾 저장 중...";
+                _lblAutoSaveBadge.ForeColor = Palette.AccentSky;
+                break;
+            case SaveState.Success:
+                _lblAutoSaveBadge.Text = e.Message;
+                _lblAutoSaveBadge.ForeColor = Palette.Green;
+                break;
+            case SaveState.Failed:
+                _lblAutoSaveBadge.Text = "⚠️ 저장 실패";
+                _lblAutoSaveBadge.ForeColor = Palette.Rose;
+                break;
+        }
+    }
+
     private void AutoSaveWorkflow()
     {
         if (_canvas == null || _canvas.Nodes.Count == 0) return;
-        try
+
+        string currentOrder = _cachedOrders.Count > 0 && _cboOrders.SelectedIndex >= 0
+            ? _cachedOrders[_cboOrders.SelectedIndex].GetProperty("orderNumber").GetString() ?? "" : "";
+        string currentPart = _lstParts.SelectedItem?.ToString() ?? "";
+
+        if (_currentJob == null || (!string.IsNullOrEmpty(currentOrder) && _currentJob.OrderNumber != currentOrder))
         {
-            var data = new WorkflowData
-            {
-                OrderId = _cachedOrders.Count > 0 && _cboOrders.SelectedIndex >= 0 ? 1 : 0,
-                OrderNumber = _cboOrders.SelectedIndex >= 0 && _cboOrders.SelectedIndex < _cachedOrders.Count
-                    ? _cachedOrders[_cboOrders.SelectedIndex].GetProperty("orderNumber").GetString() ?? "" : "",
-                PartName = _lstParts.SelectedItem?.ToString() ?? "",
-                Nodes = _canvas.Nodes.ToList(),
-                Edges = _canvas.Edges.ToList(),
-                TitleBoxes = _canvas.TitleBoxes.ToList(),
-                LastSavedAt = DateTime.Now,
-                IsConfirmed = _canvas.IsWorkflowConfirmed,
-                ConfirmedBy = _canvas.ConfirmedInfoText
-            };
-
-            // 1. Global active autosave file
-            string activeFile = Path.Combine(_localWorkflowDir, "autosave_current_active.json");
-            string json = JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(activeFile, json);
-
-            // 2. Part cache file synchronization
-            string cacheKey = GetCurrentPartCacheKey();
-            if (!string.IsNullOrEmpty(cacheKey))
-            {
-                string partFile = Path.Combine(_localWorkflowDir, $"{cacheKey}.json");
-                File.WriteAllText(partFile, json);
-            }
-
-            if (_lblAutoSaveBadge != null)
-            {
-                _lblAutoSaveBadge.Text = $"💾 자동저장 ({DateTime.Now:HH:mm:ss})";
-                _lblAutoSaveBadge.ForeColor = Palette.Green;
-            }
+            _currentJob = _storageManager.CreateJob(currentOrder, currentPart, author: _session.DisplayName);
         }
-        catch (Exception ex)
+
+        // [요구사항 2] 노드의 작업 소속 유지 및 엣지 교차 참조
+        string activeJobId = _currentJob.JobId;
+        foreach (var node in _canvas.Nodes)
         {
-            System.Diagnostics.Debug.WriteLine($"[AutoSave Error] {ex.Message}");
+            if (string.IsNullOrEmpty(node.JobId))
+                node.JobId = activeJobId;
         }
+        foreach (var edge in _canvas.Edges)
+        {
+            var fn = _canvas.Nodes.FirstOrDefault(n => n.Id == edge.FromNodeId);
+            var tn = _canvas.Nodes.FirstOrDefault(n => n.Id == edge.ToNodeId);
+            if (string.IsNullOrEmpty(edge.FromJobId)) edge.FromJobId = fn?.JobId ?? activeJobId;
+            if (string.IsNullOrEmpty(edge.ToJobId)) edge.ToJobId = tn?.JobId ?? activeJobId;
+        }
+
+        // [요구사항 3] 디바운스(Debounce 600ms) 지연 저장 실행
+        _storageManager.RequestDebouncedSave(async () =>
+        {
+            if (_canvas == null || _currentJob == null) return;
+
+            var snapshotNodes = _canvas.Nodes.ToList();
+            var snapshotEdges = _canvas.Edges.ToList();
+            var snapshotBoxes = _canvas.TitleBoxes.ToList();
+
+            // [요구사항 4] 계획 버전 감지 및 보존 (노드 위치 이동은 제외, 공정/순서/장비/작업자 변경 시 기록)
+            await _storageManager.RecordPlanVersionIfChangedAsync(
+                _currentJob,
+                snapshotNodes,
+                snapshotEdges,
+                _session.DisplayName,
+                "작업 워크플로우 실시간 공정계획 변경"
+            );
+
+            _currentJob.Nodes = snapshotNodes;
+            _currentJob.Edges = snapshotEdges;
+            _currentJob.TitleBoxes = snapshotBoxes;
+            _currentJob.IsConfirmed = _canvas.IsWorkflowConfirmed;
+            _currentJob.ConfirmedBy = _canvas.ConfirmedInfoText;
+
+            // 작업 단위 디렉토리에 안전 저장 (임시파일 교체 + .bak 보존)
+            await _storageManager.SaveJobAsync(_currentJob, _session.DisplayName);
+
+            // 하위 호환성 레거시 캐시 동기화
+            try
+            {
+                var legacyData = new WorkflowData
+                {
+                    JobId = _currentJob.JobId,
+                    OrderNumber = _currentJob.OrderNumber,
+                    PartName = _currentJob.PartName,
+                    Nodes = snapshotNodes,
+                    Edges = snapshotEdges,
+                    TitleBoxes = snapshotBoxes,
+                    LastSavedAt = DateTime.Now,
+                    IsConfirmed = _canvas.IsWorkflowConfirmed,
+                    ConfirmedBy = _canvas.ConfirmedInfoText
+                };
+                string legacyJson = JsonSerializer.Serialize(legacyData, new JsonSerializerOptions { WriteIndented = true });
+                string activeFile = Path.Combine(_localWorkflowDir, "autosave_current_active.json");
+                await File.WriteAllTextAsync(activeFile, legacyJson);
+
+                string cacheKey = GetCurrentPartCacheKey();
+                if (!string.IsNullOrEmpty(cacheKey))
+                {
+                    string partFile = Path.Combine(_localWorkflowDir, $"{cacheKey}.json");
+                    await File.WriteAllTextAsync(partFile, legacyJson);
+                }
+            }
+            catch { }
+        }, delayMs: 600);
     }
 
     private bool TryRestoreAutoSavedWorkflow()
     {
         try
         {
+            // 1. 레거시 파일 마이그레이션 백그라운드 기동
+            _ = Task.Run(async () => await _storageManager.MigrateLegacyWorkflowsAsync());
+
+            // 2. 신규 작업 단위 활성 세션 복구 시도
+            string? lastActiveJobId = _storageManager.GetLastActiveJobIdAsync().GetAwaiter().GetResult();
+            if (!string.IsNullOrEmpty(lastActiveJobId))
+            {
+                var job = _storageManager.LoadJobAsync(lastActiveJobId).GetAwaiter().GetResult();
+                if (job != null && job.Nodes.Count > 0)
+                {
+                    _currentJob = job;
+                    _canvas.Clear();
+                    _canvas.Nodes.AddRange(job.Nodes);
+                    _canvas.Edges.AddRange(job.Edges);
+                    if (job.TitleBoxes != null) _canvas.TitleBoxes.AddRange(job.TitleBoxes);
+                    _canvas.IsWorkflowConfirmed = job.IsConfirmed;
+                    _canvas.ConfirmedInfoText = job.ConfirmedBy;
+                    _canvas.Invalidate();
+                    _canvas.SelectedNode = _canvas.Nodes.FirstOrDefault();
+                    _detailPanel.BindNode(_canvas.SelectedNode);
+                    UpdateWorkflowStats();
+
+                    if (_lblAutoSaveBadge != null)
+                    {
+                        _lblAutoSaveBadge.Text = $"📂 작업 복원됨 [{job.JobId[..Math.Min(16, job.JobId.Length)]}...]";
+                        _lblAutoSaveBadge.ForeColor = Palette.AccentSky;
+                    }
+                    return true;
+                }
+            }
+
+            // 3. 레거시 파일로부터의 복구
             string activeFile = Path.Combine(_localWorkflowDir, "autosave_current_active.json");
             if (File.Exists(activeFile))
             {
@@ -3429,6 +3581,12 @@ public class WorkflowMainForm : Form
                     _canvas.SelectedNode = _canvas.Nodes.FirstOrDefault();
                     _detailPanel.BindNode(_canvas.SelectedNode);
                     UpdateWorkflowStats();
+
+                    _currentJob = _storageManager.CreateJob(data.OrderNumber, data.PartName, data.OrderId, data.PartId, author: _session.DisplayName);
+                    _currentJob.Nodes = data.Nodes;
+                    _currentJob.Edges = data.Edges;
+                    _currentJob.TitleBoxes = data.TitleBoxes;
+                    _ = _storageManager.SaveJobAsync(_currentJob, _session.DisplayName);
 
                     if (_lblAutoSaveBadge != null)
                     {
@@ -3627,5 +3785,170 @@ public class WorkflowMainForm : Form
 
         _canvas.Invalidate();
         UpdateWorkflowStats();
+    }
+
+    // =========================================================================
+    // REWORK (재가공) & HISTORY DIALOG
+    // =========================================================================
+    private async Task CreateReworkWorkflowActionAsync()
+    {
+        if (_canvas == null || _canvas.Nodes.Count == 0)
+        {
+            MessageBox.Show("재가공을 생성할 기준 워크플로우 공정이 없습니다.", "재가공 생성 불가", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        string currentOrder = _cachedOrders.Count > 0 && _cboOrders.SelectedIndex >= 0
+            ? _cachedOrders[_cboOrders.SelectedIndex].GetProperty("orderNumber").GetString() ?? "WO" : "WO";
+        string currentPart = _lstParts.SelectedItem?.ToString() ?? "PART";
+
+        if (_currentJob == null)
+        {
+            _currentJob = _storageManager.CreateJob(currentOrder, currentPart, author: _session.DisplayName);
+            _currentJob.Nodes = _canvas.Nodes.ToList();
+            _currentJob.Edges = _canvas.Edges.ToList();
+            _currentJob.TitleBoxes = _canvas.TitleBoxes.ToList();
+        }
+
+        string reworkReason = SimpleInputDialog.Show("재가공 사유를 입력하세요 (예: 치수 정밀도 보정, 추가 단차 밀링 등):", "재가공 워크플로우 생성", "치수 재가공 요청");
+        if (string.IsNullOrWhiteSpace(reworkReason))
+            return;
+
+        reworkReason = reworkReason.Trim();
+
+        string qtyStr = SimpleInputDialog.Show("재가공 대상 수량을 입력하세요:", "재가공 수량 입력", "1");
+        if (string.IsNullOrWhiteSpace(qtyStr))
+            return;
+
+        int reworkQty = int.TryParse(qtyStr.Trim(), out int parsed) ? Math.Max(1, parsed) : 1;
+
+        try
+        {
+            var reworkJob = await _storageManager.CreateReworkJobAsync(_currentJob, reworkReason, reworkQty, _session.DisplayName);
+
+            _currentJob = reworkJob;
+            _canvas.Clear();
+            _canvas.Nodes.AddRange(reworkJob.Nodes);
+            _canvas.Edges.AddRange(reworkJob.Edges);
+            _canvas.TitleBoxes.AddRange(reworkJob.TitleBoxes);
+            _canvas.IsWorkflowConfirmed = false;
+            _canvas.ConfirmedInfoText = "";
+            _canvas.Invalidate();
+            _canvas.SelectedNode = _canvas.Nodes.FirstOrDefault();
+            _detailPanel.BindNode(_canvas.SelectedNode);
+            UpdateWorkflowStats();
+
+            string msg = $"[재가공 워크플로우 생성 완료]\r\n\r\n" +
+                         $"원작업: {reworkJob.ParentJobId}\r\n" +
+                         $"신규 재가공 ID: {reworkJob.JobId}\r\n" +
+                         $"사유: {reworkJob.ReworkReason}\r\n" +
+                         $"대상수량: {reworkJob.TargetQuantity}개\r\n\r\n" +
+                         $"기존 완료 기록은 안전하게 보존되며, 새 작업은 대기 상태로 초기화되었습니다.";
+            MessageBox.Show(msg, "재가공 워크플로우 생성", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"재가공 생성 중 오류가 발생했습니다: {ex.Message}", "생성 실패", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private async Task ShowJobHistoryDialogAsync()
+    {
+        if (_currentJob == null)
+        {
+            MessageBox.Show("조회할 활성 작업이 없습니다.", "작업 없음", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var executions = await _storageManager.LoadExecutionHistoriesAsync(_currentJob.JobId);
+        string jobDir = _storageManager.GetJobDir(_currentJob.JobId);
+        string versionsFile = Path.Combine(jobDir, "plan_versions.json");
+        List<PlanVersionRecord> versions = new();
+        if (File.Exists(versionsFile))
+        {
+            try
+            {
+                string json = await File.ReadAllTextAsync(versionsFile);
+                versions = JsonSerializer.Deserialize<List<PlanVersionRecord>>(json) ?? new();
+            }
+            catch { }
+        }
+
+        using var dlg = new Form
+        {
+            Text = $"작업 이력 및 버전 관리 - [{_currentJob.JobId}]",
+            Size = new Size(820, 520),
+            StartPosition = FormStartPosition.CenterParent,
+            BackColor = Palette.Bg950,
+            ForeColor = Color.White,
+            Font = new Font("맑은 고딕", 9f)
+        };
+
+        var tabs = new TabControl { Dock = DockStyle.Fill };
+        var tabPlan = new TabPage("📋 공정 계획 변경 버전 이력") { BackColor = Palette.Bg900 };
+        var tabExec = new TabPage("⚡ 실제 실행/측정/이슈 실적") { BackColor = Palette.Bg900 };
+
+        var txtPlan = new TextBox
+        {
+            Multiline = true,
+            ReadOnly = true,
+            Dock = DockStyle.Fill,
+            BackColor = Palette.Bg950,
+            ForeColor = Palette.TextWhite,
+            ScrollBars = ScrollBars.Both,
+            Font = new Font("Consolas", 9.2f)
+        };
+        if (versions.Count == 0)
+        {
+            txtPlan.Text = "기록된 계획 변경 버전이 없습니다. (단순 노드 이동은 버전에 포함되지 않으며, 공정 추가/삭제/장비 변경 시 자동 기록됩니다)";
+        }
+        else
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (var v in versions)
+            {
+                sb.AppendLine($"[버전 {v.VersionNumber}] 일시: {v.ChangedAt:yyyy-MM-dd HH:mm:ss} | 변경자: {v.ChangedBy}");
+                sb.AppendLine($"  사유: {v.ChangeReason}");
+                sb.AppendLine($"  공정 수: {v.NodesSnapshot.Count}개, 연결선: {v.EdgesSnapshot.Count}개");
+                sb.AppendLine(new string('-', 70));
+            }
+            txtPlan.Text = sb.ToString();
+        }
+        tabPlan.Controls.Add(txtPlan);
+
+        var txtExec = new TextBox
+        {
+            Multiline = true,
+            ReadOnly = true,
+            Dock = DockStyle.Fill,
+            BackColor = Palette.Bg950,
+            ForeColor = Palette.TextWhite,
+            ScrollBars = ScrollBars.Both,
+            Font = new Font("Consolas", 9.2f)
+        };
+        if (executions.Count == 0)
+        {
+            txtExec.Text = "기록된 실제 실행/측정/이슈 실적이 없습니다. (노드 상태 변경 및 작업 진행 시 영구 보존됩니다)";
+        }
+        else
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (var ex in executions.OrderByDescending(e => e.Timestamp))
+            {
+                sb.AppendLine($"[{ex.Timestamp:yyyy-MM-dd HH:mm:ss}] [{ex.EventType}] {ex.NodeTitle} (장비: {ex.MachineId}, 작업자: {ex.WorkerName})");
+                if (!string.IsNullOrEmpty(ex.Note)) sb.AppendLine($"  상태 요약: {ex.Note}");
+                if (!string.IsNullOrEmpty(ex.InspectionDetails)) sb.AppendLine($"  측정 내용: {ex.InspectionDetails}");
+                if (!string.IsNullOrEmpty(ex.IssueDetails)) sb.AppendLine($"  이슈 내용: {ex.IssueDetails}");
+                sb.AppendLine(new string('-', 70));
+            }
+            txtExec.Text = sb.ToString();
+        }
+        tabExec.Controls.Add(txtExec);
+
+        tabs.TabPages.Add(tabPlan);
+        tabs.TabPages.Add(tabExec);
+        dlg.Controls.Add(tabs);
+
+        dlg.ShowDialog(this);
     }
 }
