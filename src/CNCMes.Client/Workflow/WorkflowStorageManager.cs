@@ -534,7 +534,9 @@ public class WorkflowStorageManager
                     FromNodeId = newFrom,
                     ToNodeId = newTo,
                     Type = oe.Type,
-                    Label = oe.Label
+                    Label = oe.Label,
+                    FromPort = oe.FromPort,
+                    ToPort = oe.ToPort
                 });
             }
         }
@@ -784,7 +786,9 @@ public class WorkflowStorageManager
             FromNodeId = src.FromNodeId,
             ToNodeId = src.ToNodeId,
             Type = src.Type,
-            Label = src.Label
+            Label = src.Label,
+            FromPort = src.FromPort,
+            ToPort = src.ToPort
         };
     }
 }

@@ -11,7 +11,6 @@ public static class TestScreenCapture
 {
     public static void CaptureForm()
     {
-        ApplicationConfiguration.Initialize();
         var api = new ApiClient();
         var session = new UserSession
         {
@@ -22,6 +21,11 @@ public static class TestScreenCapture
             SelectedMachines = new System.Collections.Generic.List<string> { "R01", "R02" }
         };
 
+        string baseDir = @"C:\Users\USER\.gemini\antigravity\brain\c11cfd6b-e9b4-430b-acd3-767a137025e6";
+
+        // =========================================================================
+        // 1. 1920x1080: 타임라인 시작 위치 수평 일치 & 상하좌우 노드점 포트 지정 연결 화면
+        // =========================================================================
         var form = new WorkflowMainForm(api, session);
         form.Width = 1920;
         form.Height = 1080;
@@ -36,13 +40,13 @@ public static class TestScreenCapture
             System.Threading.Thread.Sleep(50);
         }
 
-        // Access canvas and create nodes showing 4-way connection ports (Left, Right, Top, Bottom)
         var canvasField = typeof(WorkflowMainForm).GetField("_canvas", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var detailPanelField = typeof(WorkflowMainForm).GetField("_detailPanel", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
         if (canvasField?.GetValue(form) is WorkflowCanvasControl canvas)
         {
             canvas.Clear();
 
-            // Create Node 1 (1차 가공)
             var n1 = new WorkflowNode
             {
                 Id = "N01",
@@ -52,88 +56,89 @@ public static class TestScreenCapture
                 Assignee = "김철수",
                 Status = NodeStatus.Completed,
                 MaterialSize = "150x120x5T",
-                MaterialType = "PEEK",
-                FixingMethod = "바이스",
-                StartTime = "09:00",
-                EndTime = "10:30",
-                X = 120,
-                Y = 140,
+                MaterialType = "PEEK 5T",
+                FixingMethod = "진공 흡착 (진공 플레이트)",
+                StartTime = "09:30",
+                EndTime = "10:10",
+                X = 140,
+                Y = 160,
                 Width = 240,
                 Height = 100
             };
 
-            // Create Node 2 (측정/검사 - 우측 연결)
             var n2 = new WorkflowNode
             {
                 Id = "N02",
-                Title = "1차 중간 정밀 측정 (CMM)",
+                Title = "1차 중간측정 (CMM 정밀)",
                 Category = NodeCategory.Inspection,
                 MachineId = "측정실",
-                Assignee = "박검사",
+                Assignee = "박측정",
                 Status = NodeStatus.Running,
-                StartTime = "10:30",
-                EndTime = "11:20",
-                X = 480,
-                Y = 140,
+                MaterialSize = "150x120x5T",
+                MaterialType = "PEEK 5T",
+                FixingMethod = "진공 흡착 (진공 플레이트)",
+                StartTime = "10:20",
+                EndTime = "11:00",
+                X = 460,
+                Y = 160,
                 Width = 240,
                 Height = 100
             };
 
-            // Create Node 3 (서브인원 후공정 - 아래로 연결: Top/Bottom 포트 연결 시연)
             var n3 = new WorkflowNode
             {
                 Id = "N03",
-                Title = "챔퍼 및 버(Burr) 제거",
-                Category = NodeCategory.Collaboration,
-                MachineId = "후공정",
-                Assignee = "이서브",
-                Status = NodeStatus.Ready,
-                StartTime = "11:30",
-                EndTime = "12:30",
-                X = 480,
-                Y = 320,
-                Width = 240,
-                Height = 100
-            };
-
-            // Create Node 4 (2차 가공 - 좌측으로 복귀 연결)
-            var n4 = new WorkflowNode
-            {
-                Id = "N04",
                 Title = "2차 미세피치 정삭 (홀가공)",
                 Category = NodeCategory.Machining,
                 MachineId = "R02",
                 Assignee = "최가공",
                 Status = NodeStatus.Ready,
+                MaterialSize = "150x120x5T",
+                MaterialType = "PEEK 5T",
+                FixingMethod = "진공 흡착 (진공 플레이트)",
+                StartTime = "11:20",
+                EndTime = "13:00",
+                X = 460,
+                Y = 360,
+                Width = 240,
+                Height = 100
+            };
+
+            var n4 = new WorkflowNode
+            {
+                Id = "N04",
+                Title = "챔퍼 및 버(Burr) 제거",
+                Category = NodeCategory.Collaboration,
+                MachineId = "후공정",
+                Assignee = "이서브",
+                Status = NodeStatus.Ready,
+                MaterialSize = "150x120x5T",
+                MaterialType = "PEEK 5T",
+                FixingMethod = "바이스",
                 StartTime = "13:30",
-                EndTime = "15:00",
-                X = 120,
-                Y = 320,
+                EndTime = "14:30",
+                X = 140,
+                Y = 360,
                 Width = 240,
                 Height = 100
             };
 
             canvas.Nodes.AddRange(new[] { n1, n2, n3, n4 });
 
-            // Connect N1 (Right) -> N2 (Left) [수평 연결]
-            canvas.AddEdge("N01", "N02", EdgeType.Sequence);
+            // 포트 지정 임의 연결:
+            // N1(Right) -> N2(Left)
+            canvas.AddEdge("N01", "N02", EdgeType.Sequence, "", "Right", "Left");
+            // N2(Bottom) -> N3(Top) (사용자 요청: 아래-위 노드점 연결 지원!)
+            canvas.AddEdge("N02", "N03", EdgeType.Sequence, "", "Bottom", "Top");
+            // N3(Left) -> N4(Right) (포트 지정 연결)
+            canvas.AddEdge("N03", "N04", EdgeType.Delegation, "", "Left", "Right");
 
-            // Connect N2 (Bottom) -> N3 (Top) [수직 연결: 요청하신 위/아래 노드점 활용!]
-            canvas.AddEdge("N02", "N03", EdgeType.Delegation);
-
-            // Connect N3 (Left) -> N4 (Right) [수평 역방향 연결]
-            canvas.AddEdge("N03", "N04", EdgeType.Sequence);
-
-            // Title Box for Visual Polish
-            canvas.TitleBoxes.Add(new WorkflowTitleBox
+            // N1 선택 상태로 세팅
+            canvas.SetSelectedNodes(new[] { n1 });
+            if (detailPanelField?.GetValue(form) is NodeDetailPanel detailPanel)
             {
-                Title = "반도체 프로브카드 4단 멀티공정 (상하좌우 4포트 연결망)",
-                ColorHex = "#0284c7",
-                X = 80,
-                Y = 80,
-                Width = 680,
-                Height = 380
-            });
+                detailPanel.BindNode(n1);
+            }
 
             canvas.ResetView();
             canvas.Invalidate();
@@ -145,31 +150,61 @@ public static class TestScreenCapture
             System.Threading.Thread.Sleep(50);
         }
 
-        // Save v1.5.4 screen capture
-        using (var bmp = new Bitmap(1920, 1080))
+        // Capture 1: Aligned Screen
+        using (var bmp1 = new Bitmap(1920, 1080))
         {
-            form.DrawToBitmap(bmp, new Rectangle(0, 0, 1920, 1080));
-            string path = @"C:\Users\USER\.gemini\antigravity\brain\c11cfd6b-e9b4-430b-acd3-767a137025e6\workflow_v154_screen.png";
-            bmp.Save(path, ImageFormat.Png);
-            Console.WriteLine("SAVED_V154_SCREEN: " + path);
+            form.DrawToBitmap(bmp1, new Rectangle(0, 0, 1920, 1080));
+            string path1 = System.IO.Path.Combine(baseDir, "workflow_v160_aligned_screen.png");
+            bmp1.Save(path1, ImageFormat.Png);
+            Console.WriteLine("SAVED_ALIGNED: " + path1);
         }
 
-        // Also capture node close-up showing all 4 ports (Left, Right, Top, Bottom)
-        using (var nodeBmp = new Bitmap(760, 420))
+        // Toggle Right Sidebar (숨기기/접기 테스트)
+        var toggleMethod = typeof(WorkflowMainForm).GetMethod("ToggleRightSidebar", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        toggleMethod?.Invoke(form, null);
+
+        for (int i = 0; i < 20; i++)
         {
-            using var g = Graphics.FromImage(nodeBmp);
-            g.Clear(Color.FromArgb(10, 15, 29));
-            if (canvasField?.GetValue(form) is WorkflowCanvasControl c)
-            {
-                using var fullBmp = new Bitmap(1920, 1080);
-                form.DrawToBitmap(fullBmp, new Rectangle(0, 0, 1920, 1080));
-                g.DrawImage(fullBmp, new Rectangle(0, 0, 760, 420), new Rectangle(400, 110, 760, 420), GraphicsUnit.Pixel);
-            }
-            string cropPath = @"C:\Users\USER\.gemini\antigravity\brain\c11cfd6b-e9b4-430b-acd3-767a137025e6\node_4ports_v154.png";
-            nodeBmp.Save(cropPath, ImageFormat.Png);
-            Console.WriteLine("SAVED_NODE_4PORTS: " + cropPath);
+            Application.DoEvents();
+            System.Threading.Thread.Sleep(50);
+        }
+
+        // Capture 2: Collapsed Screen
+        using (var bmp2 = new Bitmap(1920, 1080))
+        {
+            form.DrawToBitmap(bmp2, new Rectangle(0, 0, 1920, 1080));
+            string path2 = System.IO.Path.Combine(baseDir, "workflow_v160_collapsed_screen.png");
+            bmp2.Save(path2, ImageFormat.Png);
+            Console.WriteLine("SAVED_COLLAPSED: " + path2);
         }
 
         form.Close();
+
+        // =========================================================================
+        // 2. 1366x768 저해상도 노트북 환경 캡처 (버튼 잘림 없음 검증)
+        // =========================================================================
+        var formLow = new WorkflowMainForm(api, session);
+        formLow.Width = 1366;
+        formLow.Height = 768;
+        formLow.FormBorderStyle = FormBorderStyle.None;
+        formLow.StartPosition = FormStartPosition.Manual;
+        formLow.Location = new Point(0, 0);
+
+        formLow.Show();
+        for (int i = 0; i < 20; i++)
+        {
+            Application.DoEvents();
+            System.Threading.Thread.Sleep(50);
+        }
+
+        using (var bmp3 = new Bitmap(1366, 768))
+        {
+            formLow.DrawToBitmap(bmp3, new Rectangle(0, 0, 1366, 768));
+            string path3 = System.IO.Path.Combine(baseDir, "workflow_v160_lowres_1366_screen.png");
+            bmp3.Save(path3, ImageFormat.Png);
+            Console.WriteLine("SAVED_LOWRES: " + path3);
+        }
+
+        formLow.Close();
     }
 }

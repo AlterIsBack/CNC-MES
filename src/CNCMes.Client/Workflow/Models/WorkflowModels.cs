@@ -106,20 +106,41 @@ public class WorkflowNode
     [JsonIgnore]
     public PointF[] AllAnchors => new[] { InputAnchor, OutputAnchor, TopAnchor, BottomAnchor };
 
-    public PointF GetClosestAnchor(PointF target)
+    public PointF GetAnchorByPort(string port) => port switch
     {
-        PointF closest = OutputAnchor;
-        float minD = float.MaxValue;
-        foreach (var a in AllAnchors)
+        "Left" => InputAnchor,
+        "Right" => OutputAnchor,
+        "Top" => TopAnchor,
+        "Bottom" => BottomAnchor,
+        _ => OutputAnchor
+    };
+
+    public (string portName, PointF point) GetClosestAnchorWithPort(PointF target)
+    {
+        var candidates = new (string, PointF)[]
         {
-            float d = (a.X - target.X) * (a.X - target.X) + (a.Y - target.Y) * (a.Y - target.Y);
+            ("Left", InputAnchor),
+            ("Right", OutputAnchor),
+            ("Top", TopAnchor),
+            ("Bottom", BottomAnchor)
+        };
+        var closest = candidates[1];
+        float minD = float.MaxValue;
+        foreach (var c in candidates)
+        {
+            float d = (c.Item2.X - target.X) * (c.Item2.X - target.X) + (c.Item2.Y - target.Y) * (c.Item2.Y - target.Y);
             if (d < minD)
             {
                 minD = d;
-                closest = a;
+                closest = c;
             }
         }
         return closest;
+    }
+
+    public PointF GetClosestAnchor(PointF target)
+    {
+        return GetClosestAnchorWithPort(target).point;
     }
 }
 
@@ -132,6 +153,10 @@ public class WorkflowEdge
     // [요구사항 2] 작업 소속과 연결선 분리: 다른 작업 간 연결 시 각 노드의 JobId 참조
     public string FromJobId { get; set; } = "";
     public string ToJobId { get; set; } = "";
+
+    // 사용자가 지정한 시작/종료 노드점 포트 ("Left", "Right", "Top", "Bottom", "Auto")
+    public string FromPort { get; set; } = "Auto";
+    public string ToPort { get; set; } = "Auto";
 
     public EdgeType Type { get; set; } = EdgeType.Sequence;
     public string Label { get; set; } = "";

@@ -132,6 +132,7 @@ public class NodeDetailPanel : UserControl
     public Func<WorkflowNode, bool>? IsFirstNodePredicate { get; set; }
     public Func<(string Size, string Material, string Fixing)>? GetFirstNodeMaterialProvider { get; set; }
     public Action<string, string, string>? FirstNodeMaterialChanged { get; set; }
+    public event Action? CollapseRequested;
 
     public NodeDetailPanel()
     {
@@ -148,6 +149,8 @@ public class NodeDetailPanel : UserControl
         var mainLayout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
+            AutoScroll = true,
+            AutoScrollMinSize = new Size(330, 520),
             ColumnCount = 1,
             RowCount = 10,
             Margin = new Padding(0),
@@ -170,20 +173,37 @@ public class NodeDetailPanel : UserControl
         _lblHeader = new Label
         {
             Text = "⚙ 선택 노드 상세 정보 실시간 조작",
-            Font = new Font("맑은 고딕", 9.8f, FontStyle.Bold),
+            Font = new Font("맑은 고딕", 9f, FontStyle.Bold),
             ForeColor = Palette.TextWhite,
             Dock = DockStyle.Left,
             AutoSize = true
         };
+        var btnCollapse = new Button
+        {
+            Text = "접기 ➔",
+            Font = new Font("맑은 고딕", 7.5f, FontStyle.Bold),
+            ForeColor = Palette.AccentSky,
+            BackColor = Palette.Bg800,
+            FlatStyle = FlatStyle.Flat,
+            Dock = DockStyle.Right,
+            Width = 52,
+            Height = 22,
+            Margin = new Padding(3, 0, 0, 0),
+            Cursor = Cursors.Hand
+        };
+        btnCollapse.FlatAppearance.BorderSize = 1;
+        btnCollapse.FlatAppearance.BorderColor = Palette.Border;
+        btnCollapse.Click += (s, e) => CollapseRequested?.Invoke();
+
         _lblCurrentStatus = new Label
         {
             Text = "[대기]",
-            Font = new Font("맑은 고딕", 9.5f, FontStyle.Bold),
+            Font = new Font("맑은 고딕", 8.8f, FontStyle.Bold),
             ForeColor = Palette.TextSlate400,
             Dock = DockStyle.Right,
             AutoSize = true
         };
-        pnlHeader.Controls.AddRange(new Control[] { _lblHeader, _lblCurrentStatus });
+        pnlHeader.Controls.AddRange(new Control[] { _lblHeader, btnCollapse, _lblCurrentStatus });
         mainLayout.Controls.Add(pnlHeader, 0, 0);
 
         // 1: Work Order & Part

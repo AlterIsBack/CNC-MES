@@ -143,6 +143,7 @@ public class WorkflowCanvasControl : UserControl
 
     // Edge Creation Dragging
     private WorkflowNode? _connectingFromNode;
+    private string _connectingFromPort = "Auto";
     private PointF _currentConnectingPoint;
 
     // Hit / Click Rectangles for Interactive Elements in Screen Space
@@ -340,7 +341,7 @@ public class WorkflowCanvasControl : UserControl
         }
     }
 
-    public void AddEdge(string fromId, string toId, EdgeType type = EdgeType.Sequence, string label = "")
+    public void AddEdge(string fromId, string toId, EdgeType type = EdgeType.Sequence, string label = "", string fromPort = "Auto", string toPort = "Auto")
     {
         if (fromId == toId) return;
         if (Edges.Any(e => e.FromNodeId == fromId && e.ToNodeId == toId)) return;
@@ -356,6 +357,8 @@ public class WorkflowCanvasControl : UserControl
             ToNodeId = toId, 
             FromJobId = fromNode?.JobId ?? "",
             ToJobId = toNode?.JobId ?? "",
+            FromPort = fromPort,
+            ToPort = toPort,
             Type = type, 
             Label = label 
         };
@@ -1025,6 +1028,43 @@ public class WorkflowCanvasControl : UserControl
 
     public static (PointF p1, PointF c1, PointF c2, PointF p2) GetEdgeCurvePoints(WorkflowNode from, WorkflowNode to)
     {
+        return GetEdgeCurvePoints(null, from, to);
+    }
+
+    public static (PointF p1, PointF c1, PointF c2, PointF p2) GetEdgeCurvePoints(WorkflowEdge? edge, WorkflowNode from, WorkflowNode to)
+    {
+        // 사용자가 명시적으로 포트를 지정하여 연결한 경우 그 포트 앵커를 절대적으로 고정 연결
+        if (edge != null && !string.IsNullOrEmpty(edge.FromPort) && edge.FromPort != "Auto" && 
+            !string.IsNullOrEmpty(edge.ToPort) && edge.ToPort != "Auto")
+        {
+            PointF p1 = from.GetAnchorByPort(edge.FromPort);
+            PointF p2 = to.GetAnchorByPort(edge.ToPort);
+
+            float dist = Math.Max(35f, (float)Math.Sqrt((p2.X - p1.X) * (p2.X - p1.X) + (p2.Y - p1.Y) * (p2.Y - p1.Y)) * 0.35f);
+            dist = Math.Min(dist, 120f);
+
+            PointF c1 = edge.FromPort switch
+            {
+                "Left" => new PointF(p1.X - dist, p1.Y),
+                "Right" => new PointF(p1.X + dist, p1.Y),
+                "Top" => new PointF(p1.X, p1.Y - dist),
+                "Bottom" => new PointF(p1.X, p1.Y + dist),
+                _ => new PointF(p1.X + dist, p1.Y)
+            };
+
+            PointF c2 = edge.ToPort switch
+            {
+                "Left" => new PointF(p2.X - dist, p2.Y),
+                "Right" => new PointF(p2.X + dist, p2.Y),
+                "Top" => new PointF(p2.X, p2.Y - dist),
+                "Bottom" => new PointF(p2.X, p2.Y + dist),
+                _ => new PointF(p2.X - dist, p2.Y)
+            };
+
+            return (p1, c1, c2, p2);
+        }
+
+        // 기존 Auto 자동 각도/거리 계산
         float dx = (to.X + to.Width / 2f) - (from.X + from.Width / 2f);
         float dy = (to.Y + to.Height / 2f) - (from.Y + from.Height / 2f);
 
@@ -1075,7 +1115,7 @@ public class WorkflowCanvasControl : UserControl
                 !nodeMap.TryGetValue(edge.ToNodeId, out var toNode))
                 continue;
 
-            var (p1, c1, c2, p2) = GetEdgeCurvePoints(fromNode, toNode);
+            var (p1, c1, c2, p2) = GetEdgeCurvePoints(edge, fromNode, toNode);
 
             Color edgeColor;
             float edgeWidth;
@@ -1204,11 +1244,45 @@ public class WorkflowCanvasControl : UserControl
     {
         if (_connectingFromNode == null) return;
 
-        PointF p1 = _connectingFromNode.GetClosestAnchor(_currentConnectingPoint);
+        PointF p1 = _connectingFromPort != "Auto"
+            ? _connectingFromNode.GetAnchorByPort(_connectingFromPort)
+            : _connectingFromNode.GetClosestAnchor(_currentConnectingPoint);
         PointF p2 = _currentConnectingPoint;
 
-        using var pen = new Pen(Palette.CatPrep, 2f) { DashStyle = DashStyle.Dash };
-        g.DrawLine(pen, p1, p2);
+        // 타겟 노드의 특정 앵커 근처에 마우스가 있으면 실시간 스냅 하이라이트
+        WorkflowNode? hoverTarget = null;
+        PointF snapPoint = p2;
+
+        foreach (var n in Nodes)
+        {
+            if (n == _connectingFromNode) continue;
+            var (port, anchorPt) = n.GetClosestAnchorWithPort(p2);
+            float d2 = (anchorPt.X - p2.X) * (anchorPt.X - p2.X) + (anchorPt.Y - p2.Y) * (anchorPt.Y - p2.Y);
+            if (d2 <= 500f) // 22px snap radius
+            {
+                hoverTarget = n;
+                snapPoint = anchorPt;
+                break;
+            }
+        }
+
+        using var pen = new Pen(Color.FromArgb(245, 158, 11), 2.4f) { DashStyle = DashStyle.Dash };
+        g.DrawLine(pen, p1, snapPoint);
+
+        // 시작점 시각적 초록 하이라이트
+        using var brushFrom = new SolidBrush(Color.FromArgb(16, 185, 129));
+        g.FillEllipse(brushFrom, p1.X - 5.5f, p1.Y - 5.5f, 11f, 11f);
+        using var penFrom = new Pen(Color.White, 1.5f);
+        g.DrawEllipse(penFrom, p1.X - 5.5f, p1.Y - 5.5f, 11f, 11f);
+
+        // 타겟점 시각적 빨간 스냅 링 표시
+        if (hoverTarget != null)
+        {
+            using var brushTo = new SolidBrush(Color.FromArgb(239, 68, 68));
+            g.FillEllipse(brushTo, snapPoint.X - 6f, snapPoint.Y - 6f, 12f, 12f);
+            using var penSnap = new Pen(Color.White, 2f);
+            g.DrawEllipse(penSnap, snapPoint.X - 8.5f, snapPoint.Y - 8.5f, 17f, 17f);
+        }
     }
 
     private void DrawNodes(Graphics g)
@@ -1647,14 +1721,14 @@ public class WorkflowCanvasControl : UserControl
             // 1. Check if clicking any anchor port (Left, Right, Top, Bottom) of any node to start edge creation
             foreach (var node in Nodes.AsEnumerable().Reverse())
             {
-                if (IsPointNear(worldPt, node.OutputAnchor, 14f) ||
-                    IsPointNear(worldPt, node.TopAnchor, 14f) ||
-                    IsPointNear(worldPt, node.BottomAnchor, 14f) ||
-                    IsPointNear(worldPt, node.InputAnchor, 14f))
+                var (port, anchorPt) = node.GetClosestAnchorWithPort(worldPt);
+                if (IsPointNear(worldPt, anchorPt, 16f))
                 {
                     _connectingFromNode = node;
+                    _connectingFromPort = port;
                     _currentConnectingPoint = worldPt;
                     Cursor = Cursors.Cross;
+                    Invalidate();
                     return;
                 }
             }
@@ -1972,21 +2046,41 @@ public class WorkflowCanvasControl : UserControl
             if (_connectingFromNode != null)
             {
                 var worldPt = ScreenToWorld(e.Location);
-                var targetNode = Nodes.FirstOrDefault(n => 
-                    IsPointNear(worldPt, n.InputAnchor, 16f) || 
-                    IsPointNear(worldPt, n.TopAnchor, 16f) || 
-                    IsPointNear(worldPt, n.BottomAnchor, 16f) || 
-                    IsPointNear(worldPt, n.OutputAnchor, 16f) || 
-                    n.Bounds.Contains(worldPt));
+                WorkflowNode? targetNode = null;
+                string toPort = "Auto";
+
+                // 타겟 노드의 특정 앵커 포트 우선 검사
+                foreach (var n in Nodes)
+                {
+                    if (n == _connectingFromNode) continue;
+                    var (port, anchorPt) = n.GetClosestAnchorWithPort(worldPt);
+                    if (IsPointNear(worldPt, anchorPt, 22f))
+                    {
+                        targetNode = n;
+                        toPort = port;
+                        break;
+                    }
+                }
+
+                // 포트에 직접 안 닿았더라도 노드 본체 위에서 마우스를 놓은 경우 가장 가까운 포트로 자동 결정
+                if (targetNode == null)
+                {
+                    targetNode = Nodes.FirstOrDefault(n => n != _connectingFromNode && n.Bounds.Contains(worldPt));
+                    if (targetNode != null)
+                    {
+                        toPort = targetNode.GetClosestAnchorWithPort(worldPt).portName;
+                    }
+                }
                 
                 if (targetNode != null && targetNode != _connectingFromNode)
                 {
                     EdgeType type = targetNode.Category == NodeCategory.Collaboration ? EdgeType.Delegation :
                                     (targetNode.Category == NodeCategory.Issue ? EdgeType.IssueLink : EdgeType.Sequence);
-                    AddEdge(_connectingFromNode.Id, targetNode.Id, type);
+                    AddEdge(_connectingFromNode.Id, targetNode.Id, type, "", _connectingFromPort, toPort);
                 }
 
                 _connectingFromNode = null;
+                _connectingFromPort = "Auto";
                 Cursor = Cursors.Default;
                 Invalidate();
             }
@@ -2182,7 +2276,7 @@ public class WorkflowCanvasControl : UserControl
                 !nodeMap.TryGetValue(edge.ToNodeId, out var toNode))
                 continue;
 
-            var (p1, c1, c2, p2) = GetEdgeCurvePoints(fromNode, toNode);
+            var (p1, c1, c2, p2) = GetEdgeCurvePoints(edge, fromNode, toNode);
 
             // Test points along the Bezier curve
             for (float t = 0f; t <= 1.0f; t += 0.05f)

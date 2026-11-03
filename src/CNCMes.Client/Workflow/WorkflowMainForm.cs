@@ -96,6 +96,10 @@ public class WorkflowMainForm : Form
     private DataGridView _gridPostProcess = null!;
     private SplitContainer _centerVerticalSplitter = null!;
     private Button _btnToggleBottom = null!;
+    private Button _btnToggleRightSidebar = null!;
+    private bool _isRightSidebarCollapsed = false;
+    private TableLayoutPanel _mainContainer = null!;
+    private Control _pnlRightSidebar = null!;
     private Button _btnConfirmPlan = null!;
     private Label _lblConfirmedStatusBadge = null!;
     private bool _isPlanConfirmed = false;
@@ -185,9 +189,13 @@ public class WorkflowMainForm : Form
         mainContainer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 390f)); // Right Sidebar
         mainContainer.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
+        _mainContainer = mainContainer;
+        var center = BuildCenterWorkspace();
+        _pnlRightSidebar = BuildRightSidebar();
+
         mainContainer.Controls.Add(BuildLeftSidebar(), 0, 0);
-        mainContainer.Controls.Add(BuildCenterWorkspace(), 1, 0);
-        mainContainer.Controls.Add(BuildRightSidebar(), 2, 0);
+        mainContainer.Controls.Add(center, 1, 0);
+        mainContainer.Controls.Add(_pnlRightSidebar, 2, 0);
 
         rootTable.Controls.Add(mainContainer, 0, 1);
         Controls.Add(rootTable);
@@ -491,10 +499,11 @@ public class WorkflowMainForm : Form
             ColumnCount = 1,
             RowCount = 2,
             Margin = new Padding(0, 0, 6, 0),
-            Padding = new Padding(0)
+            Padding = new Padding(0),
+            AutoScroll = true
         };
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 295f)); // Card 1: 12 Action Buttons (Height 295px, 6 rows)
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 275f)); // Card 1: 12 Action Buttons (Height 275px, 6 rows)
         panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));  // Card 2: Orders & Parts List (Full remaining height)
 
         // Card 1: Workflow Menu Buttons (12 Action Buttons: Standard, Probecard, Template Save/Load, Execution, Layout, Rework, History, Draft, Reset)
@@ -634,18 +643,19 @@ public class WorkflowMainForm : Form
             BackColor = Palette.Bg900
         };
         pnlCanvasContainer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        pnlCanvasContainer.RowStyles.Add(new RowStyle(SizeType.Absolute, 36f)); // Toolbar
+        pnlCanvasContainer.RowStyles.Add(new RowStyle(SizeType.Absolute, 44f)); // Toolbar (42px: 저해상도 스크롤바 겹침 방지 및 우측창 타임라인 정렬)
         pnlCanvasContainer.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));  // Canvas
 
         // Canvas Toolbar (Top 36px)
         var canvasToolbar = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
-            Height = 36,
+            Height = 44,
             BackColor = Palette.Bg900,
-            Padding = new Padding(8, 3, 8, 3),
+            Padding = new Padding(4, 3, 4, 3),
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = false,
+            AutoScroll = true,
             Margin = new Padding(0)
         };
         canvasToolbar.Paint += (s, e) =>
@@ -654,45 +664,57 @@ public class WorkflowMainForm : Form
             e.Graphics.DrawLine(pen, 0, canvasToolbar.Height - 1, canvasToolbar.Width, canvasToolbar.Height - 1);
         };
 
-        var btnAddPrep = CreateFlatButton("+준비노드", Palette.Bg800, Color.FromArgb(56, 189, 248), 80, 28);
-        btnAddPrep.Click += (s, e) => AddQuickNode(NodeCategory.Preparation, "소재 세팅 & 도면확인");
+        var btnAddPrep = CreateFlatButton("+준비", Palette.Bg800, Color.FromArgb(56, 189, 248), 68, 28);
+        btnAddPrep.Margin = new Padding(1, 0, 1, 0);
+        btnAddPrep.Click += (s, e) => AddQuickNode(NodeCategory.Preparation, "소재 세팅 및 도면확인");
 
-        var btnAddMach = CreateFlatButton("+가공노드", Palette.Bg800, Color.FromArgb(16, 185, 129), 80, 28);
+        var btnAddMach = CreateFlatButton("+가공", Palette.Bg800, Color.FromArgb(16, 185, 129), 68, 28);
+        btnAddMach.Margin = new Padding(1, 0, 1, 0);
         btnAddMach.Click += (s, e) => AddQuickNode(NodeCategory.Machining, "1차 황삭 가공");
 
-        var btnAddInsp = CreateFlatButton("+검사노드", Palette.Bg800, Color.FromArgb(245, 158, 11), 80, 28);
+        var btnAddInsp = CreateFlatButton("+검사", Palette.Bg800, Color.FromArgb(245, 158, 11), 68, 28);
+        btnAddInsp.Margin = new Padding(1, 0, 1, 0);
         btnAddInsp.Click += (s, e) => AddQuickNode(NodeCategory.Inspection, "치수 정밀 중간측정");
 
-        var btnAddCollab = CreateFlatButton("+서브인원", Palette.Bg800, Color.FromArgb(168, 85, 247), 80, 28);
+        var btnAddCollab = CreateFlatButton("+서브인원", Palette.Bg800, Color.FromArgb(168, 85, 247), 78, 28);
+        btnAddCollab.Margin = new Padding(1, 0, 1, 0);
         btnAddCollab.Click += (s, e) => AddQuickNode(NodeCategory.Collaboration, "서브인원 면취 및 버 제거");
 
-        var btnAddPost = CreateFlatButton("+후공정", Palette.Bg800, Color.FromArgb(99, 102, 241), 80, 28);
+        var btnAddPost = CreateFlatButton("+후공정", Palette.Bg800, Color.FromArgb(99, 102, 241), 70, 28);
+        btnAddPost.Margin = new Padding(1, 0, 1, 0);
         btnAddPost.Click += (s, e) => AddQuickNode(NodeCategory.PostProcess, "초음파 세척 및 건조");
 
-        var btnAddIssue = CreateFlatButton("+이슈등록", Palette.Bg800, Color.FromArgb(239, 68, 68), 80, 28);
+        var btnAddIssue = CreateFlatButton("+이슈", Palette.Bg800, Color.FromArgb(239, 68, 68), 68, 28);
+        btnAddIssue.Margin = new Padding(1, 0, 1, 0);
         btnAddIssue.Click += (s, e) => AddQuickNode(NodeCategory.Issue, "공구 마모 치수 주의");
 
-        var divTool = new Label { Text = "|", ForeColor = Palette.Border, AutoSize = true, Margin = new Padding(6, 6, 6, 0) };
+        var divTool = new Label { Text = "|", ForeColor = Palette.Border, AutoSize = true, Margin = new Padding(3, 6, 3, 0) };
 
-        var btnZoomReset = CreateFlatButton("🔍 100%", Palette.Bg800, Palette.TextSlate300, 68, 28);
+        var btnZoomReset = CreateFlatButton("🔍 100%", Palette.Bg800, Palette.TextSlate300, 62, 28);
+        btnZoomReset.Margin = new Padding(1, 0, 1, 0);
         btnZoomReset.Click += (s, e) => _canvas.ResetView();
 
-        var btnSelectAll = CreateFlatButton("🔲 전체선택", Palette.Bg800, Palette.TextSlate300, 80, 28);
+        var btnSelectAll = CreateFlatButton("🔲 선택", Palette.Bg800, Palette.TextSlate300, 62, 28);
+        btnSelectAll.Margin = new Padding(1, 0, 1, 0);
         btnSelectAll.Click += (s, e) => _canvas.SelectAllNodes();
 
-        var btnAddTitleGroup = CreateFlatButton("📦 +타이틀 그룹", Palette.Bg800, Color.FromArgb(56, 189, 248), 115, 28);
+        var btnAddTitleGroup = CreateFlatButton("📦 +타이틀", Palette.Bg800, Color.FromArgb(56, 189, 248), 92, 28);
+        btnAddTitleGroup.Margin = new Padding(1, 0, 1, 0);
         btnAddTitleGroup.Font = new Font("맑은 고딕", 8f, FontStyle.Bold);
         btnAddTitleGroup.Click += (s, e) => AddTitleGroupBox();
 
-        _btnToggleTimelineGuides = CreateFlatButton("⏱ 타임라인선: 켜짐", Palette.Bg800, Color.FromArgb(14, 165, 233), 125, 28);
+        _btnToggleTimelineGuides = CreateFlatButton("⏱ 가이드선", Palette.Bg800, Color.FromArgb(14, 165, 233), 88, 28);
+        _btnToggleTimelineGuides.Margin = new Padding(1, 0, 1, 0);
         _btnToggleTimelineGuides.Font = new Font("맑은 고딕", 8f, FontStyle.Bold);
         _btnToggleTimelineGuides.Click += (s, e) => ToggleTimelineGuides();
 
-        _btnTimelineBaseConfig = CreateFlatButton("⏱ 기준: 공정맞춤 ▾", Palette.Bg800, Color.FromArgb(56, 189, 248), 135, 28);
+        _btnTimelineBaseConfig = CreateFlatButton("⏱ 기준설정 ▾", Palette.Bg800, Color.FromArgb(56, 189, 248), 96, 28);
+        _btnTimelineBaseConfig.Margin = new Padding(1, 0, 1, 0);
         _btnTimelineBaseConfig.Font = new Font("맑은 고딕", 8f, FontStyle.Bold);
         _btnTimelineBaseConfig.Click += (s, e) => ShowTimelineBaseMenu(_btnTimelineBaseConfig);
 
-        var btnIntervalDec = CreateFlatButton("➖", Palette.Bg800, Palette.TextSlate300, 28, 28);
+        var btnIntervalDec = CreateFlatButton("➖", Palette.Bg800, Palette.TextSlate300, 26, 28);
+        btnIntervalDec.Margin = new Padding(1, 0, 1, 0);
         btnIntervalDec.Font = new Font("맑은 고딕", 8.5f, FontStyle.Bold);
         btnIntervalDec.Click += (s, e) =>
         {
@@ -701,11 +723,13 @@ public class WorkflowMainForm : Form
             AutoSaveWorkflow();
         };
 
-        _btnTimelineInterval = CreateFlatButton("⏱ 간격: 보통(280px) ▾", Palette.Bg800, Color.FromArgb(16, 185, 129), 145, 28);
+        _btnTimelineInterval = CreateFlatButton("⏱ 간격(280px) ▾", Palette.Bg800, Color.FromArgb(16, 185, 129), 115, 28);
+        _btnTimelineInterval.Margin = new Padding(1, 0, 1, 0);
         _btnTimelineInterval.Font = new Font("맑은 고딕", 8f, FontStyle.Bold);
         _btnTimelineInterval.Click += (s, e) => ShowTimelineIntervalMenu(_btnTimelineInterval);
 
-        var btnIntervalInc = CreateFlatButton("➕", Palette.Bg800, Palette.TextSlate300, 28, 28);
+        var btnIntervalInc = CreateFlatButton("➕", Palette.Bg800, Palette.TextSlate300, 26, 28);
+        btnIntervalInc.Margin = new Padding(1, 0, 1, 0);
         btnIntervalInc.Font = new Font("맑은 고딕", 8.5f, FontStyle.Bold);
         btnIntervalInc.Click += (s, e) =>
         {
@@ -714,7 +738,9 @@ public class WorkflowMainForm : Form
             AutoSaveWorkflow();
         };
 
-        var btnTimelineTop = CreateFlatButton("⏱ 타임라인 정렬", Palette.Bg800, Color.FromArgb(14, 165, 233), 110, 28);
+        var btnTimelineTop = CreateFlatButton("⏱ 타임라인 정렬", Palette.Bg800, Color.FromArgb(14, 165, 233), 100, 28);
+        btnTimelineTop.Margin = new Padding(1, 0, 1, 0);
+        btnTimelineTop.Font = new Font("맑은 고딕", 8f, FontStyle.Bold);
         btnTimelineTop.Click += (s, e) =>
         {
             _canvas.ArrangeByTimeline(autoFitBaseHour: !_canvas.CustomTimelineBaseHour.HasValue);
@@ -722,14 +748,19 @@ public class WorkflowMainForm : Form
             AutoSaveWorkflow();
         };
 
-        // Bottom History Toggle Button
-        _btnToggleBottom = CreateFlatButton("🔽 하단창 숨기기", Palette.Bg800, Palette.AccentSky, 140, 28);
+        // Bottom History & Right Sidebar Toggle Buttons
+        _btnToggleBottom = CreateFlatButton("🔽 하단창", Palette.Bg800, Palette.AccentSky, 75, 28);
+        _btnToggleBottom.Margin = new Padding(1, 0, 1, 0);
         _btnToggleBottom.Click += (s, e) => SetBottomPanelCollapsed(!_centerVerticalSplitter.Panel2Collapsed);
+
+        _btnToggleRightSidebar = CreateFlatButton("⚙ 상세창 접기 ▶", Palette.Bg800, Color.FromArgb(56, 189, 248), 110, 28);
+        _btnToggleRightSidebar.Margin = new Padding(1, 0, 1, 0);
+        _btnToggleRightSidebar.Click += (s, e) => ToggleRightSidebar();
 
         canvasToolbar.Controls.AddRange(new Control[]
         {
             btnAddPrep, btnAddMach, btnAddInsp, btnAddCollab, btnAddPost, btnAddIssue,
-            divTool, btnAddTitleGroup, _btnToggleTimelineGuides, _btnTimelineBaseConfig, btnIntervalDec, _btnTimelineInterval, btnIntervalInc, btnTimelineTop, btnZoomReset, btnSelectAll, _btnToggleBottom
+            divTool, btnAddTitleGroup, _btnToggleTimelineGuides, _btnTimelineBaseConfig, btnIntervalDec, _btnTimelineInterval, btnIntervalInc, btnTimelineTop, btnZoomReset, btnSelectAll, _btnToggleBottom, _btnToggleRightSidebar
         });
 
         // Canvas Control
@@ -933,13 +964,51 @@ public class WorkflowMainForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 2,
+            RowCount = 3,
             Margin = new Padding(6, 0, 0, 0),
             Padding = new Padding(0)
         };
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));  // Node Details Panel (Fills maximum height!)
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 210f)); // Compact Tabbed Communication (Notices + Chat)
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 44f)); // Row 0: Top Bar (타임라인 눈금자 시작 높이와 완벽 수평 일치)
+        panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));  // Row 1: Node Details Panel
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 205f)); // Row 2: Realtime Chat Card
+
+        // Row 0: Top Alignment Header Bar (Canvas Toolbar 높이 42px와 일치시켜 DetailPanel을 타임라인 시작 위치에 맞춤)
+        var pnlRightTopAlignBar = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            BackColor = Palette.Bg900,
+            Padding = new Padding(6, 4, 6, 4),
+            Margin = new Padding(0)
+        };
+        pnlRightTopAlignBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        pnlRightTopAlignBar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        pnlRightTopAlignBar.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+        pnlRightTopAlignBar.Paint += (s, e) =>
+        {
+            using var pen = new Pen(Palette.Border, 1);
+            e.Graphics.DrawLine(pen, 0, pnlRightTopAlignBar.Height - 1, pnlRightTopAlignBar.Width, pnlRightTopAlignBar.Height - 1);
+        };
+
+        var lblRightBarTitle = new Label
+        {
+            Text = "⚙ 공정 상세 제어 패널",
+            Font = new Font("맑은 고딕", 8.8f, FontStyle.Bold),
+            ForeColor = Palette.AccentSky,
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+
+        var btnCollapseRight = CreateFlatButton("▶ 상세창 접기", Palette.Bg800, Color.FromArgb(56, 189, 248), 96, 28);
+        btnCollapseRight.Margin = new Padding(2, 2, 2, 2);
+        btnCollapseRight.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
+        btnCollapseRight.Click += (s, e) => ToggleRightSidebar();
+
+        pnlRightTopAlignBar.Controls.Add(lblRightBarTitle, 0, 0);
+        pnlRightTopAlignBar.Controls.Add(btnCollapseRight, 1, 0);
+        panel.Controls.Add(pnlRightTopAlignBar, 0, 0);
 
         // 1: Node Details Panel
         _detailPanel = new NodeDetailPanel { Dock = DockStyle.Fill };
@@ -1007,6 +1076,7 @@ public class WorkflowMainForm : Form
             };
             AddQuickNode(cat, title);
         };
+        _detailPanel.CollapseRequested += ToggleRightSidebar;
         _detailPanel.SubWorkerTaskSendRequested += async (node, subWorker, instruction) => await SendSubWorkerTaskAsync(node, subWorker, instruction);
         _detailPanel.IssueDialogRequested += (node) => OpenIssueDialog(node);
         _detailPanel.NodeUpdated += (node) => AutoSaveWorkflow();
@@ -1022,7 +1092,7 @@ public class WorkflowMainForm : Form
         Deactivate += (s, e) => AutoSaveWorkflow();
         FormClosing += (s, e) => AutoSaveWorkflow();
 
-        panel.Controls.Add(_detailPanel, 0, 0);
+        panel.Controls.Add(_detailPanel, 0, 1);
 
         // 2: Dedicated Always-Visible Realtime Chat Card with Top Notice Banner
         var pnlChatCardBody = new TableLayoutPanel
@@ -1105,7 +1175,7 @@ public class WorkflowMainForm : Form
         pnlChatCardBody.Controls.Add(pnlChatSend, 0, 2);
 
         var cardChat = CreateCard("💬 현장 실시간 소통 채팅", pnlChatCardBody);
-        panel.Controls.Add(cardChat, 0, 1);
+        panel.Controls.Add(cardChat, 0, 2);
 
         return panel;
     }
@@ -3951,4 +4021,32 @@ public class WorkflowMainForm : Form
 
         dlg.ShowDialog(this);
     }
+
+    private void ToggleRightSidebar()
+    {
+        _isRightSidebarCollapsed = !_isRightSidebarCollapsed;
+        if (_isRightSidebarCollapsed)
+        {
+            _mainContainer.ColumnStyles[2].Width = 0f;
+            _pnlRightSidebar.Visible = false;
+            if (_btnToggleRightSidebar != null)
+            {
+                _btnToggleRightSidebar.Text = "⚙ 상세창 열기 ◀";
+                _btnToggleRightSidebar.BackColor = Color.FromArgb(8, 47, 73);
+                _btnToggleRightSidebar.ForeColor = Palette.AccentSky;
+            }
+        }
+        else
+        {
+            _mainContainer.ColumnStyles[2].Width = 390f;
+            _pnlRightSidebar.Visible = true;
+            if (_btnToggleRightSidebar != null)
+            {
+                _btnToggleRightSidebar.Text = "⚙ 상세창 접기 ▶";
+                _btnToggleRightSidebar.BackColor = Palette.Bg800;
+                _btnToggleRightSidebar.ForeColor = Color.FromArgb(56, 189, 248);
+            }
+        }
+    }
+
 }
