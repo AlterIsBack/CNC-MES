@@ -52,6 +52,7 @@ public class WorkflowCanvasControl : UserControl
     {
         PixelsPerHour = Math.Clamp(pxPerHour, 120f, 720f);
         ArrangeByTimeline(autoFitBaseHour: false);
+        TimelineIntervalChanged?.Invoke(PixelsPerHour);
         Invalidate();
     }
 
@@ -149,6 +150,10 @@ public class WorkflowCanvasControl : UserControl
     private RectangleF _emptyCloseButtonTopRect;
     private RectangleF _emptyCloseButtonBottomRect;
     private bool _hideEmptyCanvasGuide = false;
+    private bool _isDraggingTimelineRuler = false;
+    private Point _timelineDragStartMouse;
+    private float _timelineDragStartPixelsPerHour;
+    public event Action<float>? TimelineIntervalChanged;
 
     public bool HideEmptyCanvasGuide
     {
@@ -1500,6 +1505,16 @@ public class WorkflowCanvasControl : UserControl
 
         _mouseDownLocation = e.Location;
 
+        // 눈금자 영역(상단 35px) 클릭 시 마우스 좌우 드래그로 타임라인 간격 실시간 조절 시작
+        if (ShowTimelineGuides && e.Button == MouseButtons.Left && e.Y <= 35)
+        {
+            _isDraggingTimelineRuler = true;
+            _timelineDragStartMouse = e.Location;
+            _timelineDragStartPixelsPerHour = PixelsPerHour;
+            Cursor = Cursors.SizeWE;
+            return;
+        }
+
         // 1. Check if clicked the Empty Guide Close Buttons
         if (Nodes.Count == 0 && !_hideEmptyCanvasGuide &&
             (_emptyCloseButtonTopRect.Contains(e.Location) || _emptyCloseButtonBottomRect.Contains(e.Location)))
@@ -1670,6 +1685,27 @@ public class WorkflowCanvasControl : UserControl
     {
         base.OnMouseMove(e);
 
+        if (_isDraggingTimelineRuler)
+        {
+            int deltaX = e.X - _timelineDragStartMouse.X;
+            float newInterval = Math.Clamp(_timelineDragStartPixelsPerHour + (deltaX * 1.5f), 120f, 720f);
+            if (Math.Abs(newInterval - PixelsPerHour) > 1f)
+            {
+                PixelsPerHour = newInterval;
+                ArrangeByTimeline(autoFitBaseHour: false);
+                TimelineIntervalChanged?.Invoke(PixelsPerHour);
+                Invalidate();
+            }
+            return;
+        }
+
+        // 눈금자 영역에 마우스 올렸을 때 SizeWE(좌우 화살표) 커서 표시
+        if (ShowTimelineGuides && e.Y <= 35 && !_isPanning && _draggedNodes.Count == 0 && !_isBoxSelecting)
+        {
+            Cursor = Cursors.SizeWE;
+            return;
+        }
+
         if (_isPanning)
         {
             _panOffset = new PointF(
@@ -1823,6 +1859,14 @@ public class WorkflowCanvasControl : UserControl
 
         if (e.Button == MouseButtons.Left)
         {
+            if (_isDraggingTimelineRuler)
+            {
+                _isDraggingTimelineRuler = false;
+                Cursor = Cursors.Default;
+                WorkflowChanged?.Invoke();
+                return;
+            }
+
             if (_connectingFromNode != null)
             {
                 var worldPt = ScreenToWorld(e.Location);

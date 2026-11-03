@@ -38,6 +38,15 @@ public class WorkflowMainForm : Form
     private Button _btnTimelineInterval = null!;
     private FlowLayoutPanel _pnlSubWorkerCards = null!;
     private Button _btnRefreshAll = null!;
+    private Button _btnManualRefresh = null!;
+    private Button _btnAutoRefreshToggle = null!;
+    private int _autoRefreshSeconds = 5;
+    private bool _isAutoRefreshEnabled = true;
+
+    private readonly HashSet<string> _knownWorkOrderNumbers = new();
+    private readonly HashSet<string> _knownNoticeTitles = new();
+    private readonly HashSet<string> _knownChatSignatures = new();
+    private bool _isInitialDataLoaded = false;
     private Button _btnOpenNoticesTop = null!;
     private Label _lblAutoSaveBadge = null!;
     private Label _lblTopNoticeBanner = null!;
@@ -111,7 +120,7 @@ public class WorkflowMainForm : Form
 
     private void InitializeUI()
     {
-        Text = $"CNC-MES 스마트 현장 터미널 v1.5.2 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
+        Text = $"CNC-MES 스마트 현장 터미널 v1.5.3 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
         Size = new Size(1600, 960);
         MinimumSize = new Size(1280, 720);
         StartPosition = FormStartPosition.CenterScreen;
@@ -157,7 +166,10 @@ public class WorkflowMainForm : Form
         Controls.Add(rootTable);
 
         // Polling Timer (3.5s)
-        _pollTimer = new System.Windows.Forms.Timer { Interval = 3500 };
+        KeyPreview = true;
+        _canvas.TimelineIntervalChanged += (newPx) => UpdateTimelineIntervalButtonText();
+
+        _pollTimer = new System.Windows.Forms.Timer { Interval = 5000 };
         _pollTimer.Tick += async (s, e) => await PollRealtimeDataAsync();
 
         Shown += async (s, e) => await OnFormShownAsync();
@@ -171,6 +183,7 @@ public class WorkflowMainForm : Form
         await LoadChatAsync();
         await LoadHistoryGridsAsync();
         TryRestoreAutoSavedWorkflow();
+        _isInitialDataLoaded = true;
 
         // 1-second live clock
         var liveTimer = new System.Windows.Forms.Timer { Interval = 1000 };
@@ -196,7 +209,7 @@ public class WorkflowMainForm : Form
         };
         topBar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 340f)); // Brand & Logo
         topBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));  // Center Live Stats Box
-        topBar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 450f)); // Actions & View Switch
+        topBar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 680f)); // Actions & View Switch
         topBar.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
         topBar.Paint += (s, e) =>
@@ -220,7 +233,7 @@ public class WorkflowMainForm : Form
         pnlBrand.Controls.Add(pnlIcon);
 
         var lblBrand = new Label { Text = "CNC-MES", Location = new Point(44, 8), Font = new Font("맑은 고딕", 12f, FontStyle.Bold), ForeColor = Color.White, AutoSize = true };
-        var lblVer = new Label { Text = "v1.5.2 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
+        var lblVer = new Label { Text = "v1.5.3 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
         var lblStatus = new Label { Text = "● 서버 정상", Location = new Point(245, 11), Font = new Font("맑은 고딕", 8f, FontStyle.Bold), ForeColor = Palette.Green, BackColor = Color.FromArgb(80, 6, 78, 59), AutoSize = true, Padding = new Padding(5, 1, 5, 1) };
         var lblSub = new Label { Text = "WORKFLOW-BASED OPERATOR CONTROL SYSTEM", Location = new Point(45, 30), Font = new Font("Consolas", 7.2f), ForeColor = Palette.TextSlate400, AutoSize = true };
         pnlBrand.Controls.AddRange(new Control[] { lblBrand, lblVer, lblStatus, lblSub });
@@ -328,8 +341,15 @@ public class WorkflowMainForm : Form
         pnlCenter.Controls.Add(pnlCenterBox);
         topBar.Controls.Add(pnlCenter, 1, 0);
 
-        // Right Actions (AutoSave Badge, Notices, User Profile - Classic View Removed)
-        var pnlRight = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) };
+        // Right Actions (AutoSave Badge, Notices, User Profile, Manual Refresh, Auto Refresh)
+        var pnlRight = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = false,
+            Margin = new Padding(0),
+            Padding = new Padding(0, 8, 4, 0)
+        };
 
         _lblAutoSaveBadge = new Label
         {
@@ -337,12 +357,12 @@ public class WorkflowMainForm : Form
             Font = new Font("맑은 고딕", 8.0f, FontStyle.Bold),
             ForeColor = Palette.TextSlate400,
             BackColor = Color.FromArgb(40, 15, 23, 42),
-            Size = new Size(145, 34),
-            Location = new Point(295, 9),
+            Size = new Size(130, 34),
+            Margin = new Padding(3, 0, 3, 0),
             TextAlign = ContentAlignment.MiddleCenter
         };
 
-        var pnlUser = new Panel { Size = new Size(135, 34), Location = new Point(152, 9), BackColor = Palette.Bg800 };
+        var pnlUser = new Panel { Size = new Size(120, 34), Margin = new Padding(3, 0, 3, 0), BackColor = Palette.Bg800 };
         pnlUser.Paint += (s, e) =>
         {
             using var pen = new Pen(Palette.Border, 1);
@@ -354,16 +374,23 @@ public class WorkflowMainForm : Form
             e.Graphics.DrawString("a", fontA, brushSky, new PointF(12, 8));
             using var fontTxt = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
             using var brushTxt = new SolidBrush(Palette.TextSlate300);
-            e.Graphics.DrawString($"작업자 [{_session.DisplayName}]", fontTxt, brushTxt, new PointF(33, 8));
+            e.Graphics.DrawString($"[{_session.DisplayName}]", fontTxt, brushTxt, new PointF(33, 8));
         };
 
         _btnOpenNoticesTop = CreateFlatButton("📢 공지목록", Palette.Bg800, Palette.Amber, 90, 34);
-        _btnOpenNoticesTop.Location = new Point(54, 9);
+        _btnOpenNoticesTop.Margin = new Padding(3, 0, 3, 0);
         _btnOpenNoticesTop.Click += async (s, e) => await ShowNoticesDialogAsync();
 
-        _btnRefreshAll = CreateFlatButton("🔄", Palette.Bg800, Palette.TextSlate300, 34, 34);
-        _btnRefreshAll.Location = new Point(12, 9);
-        _btnRefreshAll.Click += async (s, e) => await RefreshAllAsync();
+        _btnAutoRefreshToggle = CreateFlatButton("⚡ 자동: 5초 ▾", Palette.Bg800, Color.FromArgb(52, 211, 153), 108, 34);
+        _btnAutoRefreshToggle.Margin = new Padding(3, 0, 3, 0);
+        _btnAutoRefreshToggle.Font = new Font("맑은 고딕", 8.2f, FontStyle.Bold);
+        _btnAutoRefreshToggle.Click += (s, e) => ShowAutoRefreshMenu(_btnAutoRefreshToggle);
+
+        _btnManualRefresh = CreateFlatButton("🔄 새로고침 (F5)", Palette.Bg800, Palette.AccentSky, 125, 34);
+        _btnManualRefresh.Margin = new Padding(3, 0, 3, 0);
+        _btnManualRefresh.Font = new Font("맑은 고딕", 8.5f, FontStyle.Bold);
+        _btnManualRefresh.Click += async (s, e) => await TriggerManualRefreshAsync();
+        _btnRefreshAll = _btnManualRefresh;
 
         _lblConfirmedStatusBadge = new Label
         {
@@ -371,15 +398,34 @@ public class WorkflowMainForm : Form
             Font = new Font("Consolas", 8.8f, FontStyle.Bold),
             ForeColor = Palette.Green,
             BackColor = Color.FromArgb(70, 6, 78, 59),
-            Size = new Size(110, 32),
-            Location = new Point(0, 10),
+            Size = new Size(100, 34),
+            Margin = new Padding(3, 0, 3, 0),
             TextAlign = ContentAlignment.MiddleCenter,
             Visible = false
         };
-        pnlRight.Controls.AddRange(new Control[] { _lblConfirmedStatusBadge, _btnRefreshAll, _btnOpenNoticesTop, pnlUser, _lblAutoSaveBadge });
+
+        pnlRight.Controls.AddRange(new Control[] {
+            _lblAutoSaveBadge,
+            pnlUser,
+            _btnOpenNoticesTop,
+            _btnAutoRefreshToggle,
+            _btnManualRefresh,
+            _lblConfirmedStatusBadge
+        });
         topBar.Controls.Add(pnlRight, 2, 0);
 
         return topBar;
+    }
+
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        if (keyData == Keys.F5)
+        {
+            _ = TriggerManualRefreshAsync();
+            return true;
+        }
+        return base.ProcessCmdKey(ref msg, keyData);
     }
 
     private Control BuildLeftSidebar()
@@ -1001,11 +1047,102 @@ public class WorkflowMainForm : Form
         return panel;
     }
 
+    private void ShowAutoRefreshMenu(Control anchor)
+    {
+        var menu = new ContextMenuStrip { BackColor = Palette.Bg800, ForeColor = Palette.TextSlate300 };
+        menu.RenderMode = ToolStripRenderMode.System;
+
+        var intervals = new (int sec, string label)[]
+        {
+            (3, "⚡ 3초 간격 (초고속 실시간)"),
+            (5, "⚡ 5초 간격 (기본 권장)"),
+            (10, "⚡ 10초 간격"),
+            (30, "⚡ 30초 간격")
+        };
+
+        foreach (var (sec, label) in intervals)
+        {
+            var item = new ToolStripMenuItem(label)
+            {
+                Checked = _isAutoRefreshEnabled && _autoRefreshSeconds == sec
+            };
+            int s = sec;
+            item.Click += (sender, e) =>
+            {
+                _autoRefreshSeconds = s;
+                _isAutoRefreshEnabled = true;
+                _pollTimer.Interval = _autoRefreshSeconds * 1000;
+                if (!_pollTimer.Enabled) _pollTimer.Start();
+                _btnAutoRefreshToggle.Text = $"⚡ 자동: {_autoRefreshSeconds}초 ▾";
+                _btnAutoRefreshToggle.ForeColor = Color.FromArgb(52, 211, 153);
+            };
+            menu.Items.Add(item);
+        }
+
+        menu.Items.Add(new ToolStripSeparator());
+
+        var itemStop = new ToolStripMenuItem("⏸ 자동 갱신 끄기 (수동 전용)")
+        {
+            Checked = !_isAutoRefreshEnabled
+        };
+        itemStop.Click += (sender, e) =>
+        {
+            _isAutoRefreshEnabled = false;
+            _pollTimer.Stop();
+            _btnAutoRefreshToggle.Text = "⏸ 자동: OFF ▾";
+            _btnAutoRefreshToggle.ForeColor = Palette.TextSlate400;
+        };
+        menu.Items.Add(itemStop);
+
+        menu.Show(anchor, new Point(0, anchor.Height + 2));
+    }
+
+    private async Task TriggerManualRefreshAsync()
+    {
+        if (_btnManualRefresh == null) return;
+        try
+        {
+            _btnManualRefresh.Enabled = false;
+            _btnManualRefresh.Text = "🔄 갱신중...";
+            _btnManualRefresh.ForeColor = Palette.Amber;
+
+            await RefreshAllAsync();
+
+            _btnManualRefresh.Text = "✔ 새로고침 완료";
+            _btnManualRefresh.ForeColor = Palette.Green;
+
+            var t = new System.Windows.Forms.Timer { Interval = 1000 };
+            t.Tick += (s, e) =>
+            {
+                t.Stop();
+                t.Dispose();
+                if (!_btnManualRefresh.IsDisposed)
+                {
+                    _btnManualRefresh.Text = "🔄 새로고침 (F5)";
+                    _btnManualRefresh.ForeColor = Palette.AccentSky;
+                    _btnManualRefresh.Enabled = true;
+                }
+            };
+            t.Start();
+        }
+        catch
+        {
+            if (!_btnManualRefresh.IsDisposed)
+            {
+                _btnManualRefresh.Text = "🔄 새로고침 (F5)";
+                _btnManualRefresh.ForeColor = Palette.AccentSky;
+                _btnManualRefresh.Enabled = true;
+            }
+        }
+    }
+
     private async Task PollRealtimeDataAsync()
     {
+        if (!_isAutoRefreshEnabled) return;
         try
         {
             await LoadMachinesAsync();
+            await LoadWorkOrdersAsync();
             await LoadNoticesAsync();
             await LoadChatAsync();
             await LoadHistoryGridsAsync();
@@ -1114,6 +1251,26 @@ public class WorkflowMainForm : Form
                     string customer = o.TryGetProperty("customerName", out var cn) ? cn.GetString() ?? "" : "";
                     string status = o.TryGetProperty("status", out var st) ? st.GetString() ?? "" : "대기";
                     _cboOrders.Items.Add($"[{orderNo}] {customer} ({status})");
+
+                    if (_isInitialDataLoaded && !string.IsNullOrEmpty(orderNo) && !_knownWorkOrderNumbers.Contains(orderNo))
+                    {
+                        string custText = string.IsNullOrEmpty(customer) ? "" : $" ({customer})";
+                        ToastNotificationForm.ShowToast(
+                            "📋 신규 작업지시서 등록",
+                            $"새 작업지시서 [{orderNo}]{custText} 등록되었습니다.",
+                            ToastType.WorkOrder,
+                            () => {
+                                if (_cboOrders != null && !_cboOrders.IsDisposed)
+                                {
+                                    _cboOrders.Focus();
+                                }
+                            }
+                        );
+                    }
+                    if (!string.IsNullOrEmpty(orderNo))
+                    {
+                        _knownWorkOrderNumbers.Add(orderNo);
+                    }
                 }
                 if (_cboOrders.Items.Count > 0 && _cboOrders.SelectedIndex < 0)
                 {
@@ -2839,6 +2996,7 @@ public class WorkflowMainForm : Form
                     if (string.IsNullOrEmpty(firstNoticeTitle)) firstNoticeTitle = title;
                     string date = n.TryGetProperty("createdAt", out var cd) ? cd.GetString() ?? "" : "";
                     string acks = n.TryGetProperty("officialAcksJson", out var ak) ? ak.GetString() ?? "" : "";
+                    string noticeId = n.TryGetProperty("id", out var idEl) ? idEl.ToString() : title;
                     bool isAcked = acks.Contains(_session.Username) || acks.Contains(_session.DisplayName);
 
                     if (DateTime.TryParse(date, out var dt)) date = dt.ToString("MM-dd HH:mm");
@@ -2846,6 +3004,20 @@ public class WorkflowMainForm : Form
                     if (!isAcked) unread++;
 
                     if (_lstNotices != null) _lstNotices.Items.Add($"{badge} {title} ({date})");
+
+                    if (_isInitialDataLoaded && !string.IsNullOrEmpty(title) && !_knownNoticeTitles.Contains(noticeId))
+                    {
+                        ToastNotificationForm.ShowToast(
+                            "📢 새 공지사항 알림",
+                            $"[공지] {title}",
+                            ToastType.Notice,
+                            async () => await ShowNoticesDialogAsync()
+                        );
+                    }
+                    if (!string.IsNullOrEmpty(noticeId))
+                    {
+                        _knownNoticeTitles.Add(noticeId);
+                    }
                 }
                 if (_lblNoticeBadge != null)
                 {
@@ -2993,6 +3165,32 @@ public class WorkflowMainForm : Form
                     string author = msg.TryGetProperty("author", out var s) ? s.GetString() ?? "" : "시스템";
                     string content = msg.TryGetProperty("content", out var m) ? m.GetString() ?? "" : "";
                     string createdAt = msg.TryGetProperty("createdAt", out var cd) ? cd.GetString() ?? "" : "";
+                    string sig = $"{author}_{createdAt}_{content}";
+
+                    if (_isInitialDataLoaded && !string.IsNullOrEmpty(content) && !_knownChatSignatures.Contains(sig))
+                    {
+                        if (!author.Equals(_session.DisplayName, StringComparison.OrdinalIgnoreCase) &&
+                            !author.Equals(_session.Username, StringComparison.OrdinalIgnoreCase))
+                        {
+                            ToastNotificationForm.ShowToast(
+                                "💬 새 현장 채팅",
+                                $"[{author}] {content}",
+                                ToastType.Chat,
+                                () =>
+                                {
+                                    if (_txtChatInput != null && !_txtChatInput.IsDisposed)
+                                    {
+                                        _txtChatInput.Focus();
+                                    }
+                                }
+                            );
+                        }
+                    }
+                    if (!string.IsNullOrEmpty(sig))
+                    {
+                        _knownChatSignatures.Add(sig);
+                    }
+
                     if (DateTime.TryParse(createdAt, out var dt)) createdAt = dt.ToString("HH:mm");
                     _lstChat.Items.Add($"[{author}] {content} ({createdAt})");
                 }

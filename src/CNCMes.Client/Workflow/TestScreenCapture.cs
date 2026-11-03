@@ -36,99 +36,62 @@ public static class TestScreenCapture
             System.Threading.Thread.Sleep(50);
         }
 
-        // 1. Capture TemplateLoadDialog rendering (하단 버튼 바 가시성 완벽 검증)
-        using (var dlg = new TemplateLoadDialog())
+        // 1. Toast Notification Forms rendering test (신규 작업지시서, 공지사항, 채팅 알림)
+        var toast1 = new ToastNotificationForm("📋 신규 작업지시서 등록", "새 작업지시서 [WO-2026-003] (삼성전자) 등록되었습니다.", ToastType.WorkOrder);
+        toast1.Opacity = 0.95;
+        toast1.Location = new Point(1920 - 380, 1080 - 100);
+        toast1.Show();
+
+        var toast2 = new ToastNotificationForm("📢 새 공지사항 알림", "[긴급공지] 오후 2시 공구 교체 및 안전 점검 진행 예정", ToastType.Notice);
+        toast2.Opacity = 0.95;
+        toast2.Location = new Point(1920 - 380, 1080 - 195);
+        toast2.Show();
+
+        var toast3 = new ToastNotificationForm("💬 새 현장 채팅", "[이반장]: R02 황삭 가공 완료되었습니다. 측정실 이송 부탁드립니다.", ToastType.Chat);
+        toast3.Opacity = 0.95;
+        toast3.Location = new Point(1920 - 380, 1080 - 290);
+        toast3.Show();
+
+        for (int k = 0; k < 15; k++) { Application.DoEvents(); System.Threading.Thread.Sleep(30); }
+
+        // Capture single toast card preview
+        using (var toastBmp = new Bitmap(toast1.Width, toast1.Height))
         {
-            dlg.StartPosition = FormStartPosition.Manual;
-            dlg.Location = new Point(100, 100);
-            dlg.Show();
-            for (int k = 0; k < 10; k++) { Application.DoEvents(); System.Threading.Thread.Sleep(30); }
-            using (var dlgBmp = new Bitmap(dlg.Width, dlg.Height))
-            {
-                dlg.DrawToBitmap(dlgBmp, new Rectangle(0, 0, dlg.Width, dlg.Height));
-                string dlgPath = @"C:\Users\USER\.gemini\antigravity\brain\c11cfd6b-e9b4-430b-acd3-767a137025e6\template_load_dialog_v152.png";
-                dlgBmp.Save(dlgPath, ImageFormat.Png);
-                Console.WriteLine("SAVED_TEMPLATE_DIALOG_SCREEN: " + dlgPath);
-            }
-            dlg.Close();
+            toast1.DrawToBitmap(toastBmp, new Rectangle(0, 0, toast1.Width, toast1.Height));
+            string tPath = @"C:\Users\USER\.gemini\antigravity\brain\c11cfd6b-e9b4-430b-acd3-767a137025e6\toast_card_v153.png";
+            toastBmp.Save(tPath, ImageFormat.Png);
+            Console.WriteLine("SAVED_TOAST_CARD: " + tPath);
         }
 
-        // 2. 다중 템플릿 한 화면 불러오기 검증 (프로브카드 표준 9공정 + 반도체 소켓 7공정 동시 배치)
-        var allTemplates = TemplateManager.GetAllTemplates();
-        if (allTemplates.Count >= 2)
-        {
-            var t1 = allTemplates[0]; // 프로브카드
-            var t2 = allTemplates[1]; // 반도체 소켓
-
-            var canvasField = typeof(WorkflowMainForm).GetField("_canvas", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            if (canvasField?.GetValue(form) is WorkflowCanvasControl canvas)
-            {
-                canvas.Clear();
-
-                // 템플릿 1 추가
-                var (n1, e1, b1) = TemplateManager.InstantiateTemplate(t1, "WO-2026-001", t1.Name);
-                if (b1.Count == 0 && n1.Count > 0)
-                {
-                    b1.Add(new WorkflowTitleBox
-                    {
-                        Title = $"[1공정군] {t1.Name} ({t1.TargetMaterial})",
-                        ColorHex = "#0284c7",
-                        X = 40,
-                        Y = 60,
-                        Width = 600,
-                        Height = 320
-                    });
-                }
-                canvas.Nodes.AddRange(n1);
-                canvas.Edges.AddRange(e1);
-                canvas.TitleBoxes.AddRange(b1);
-
-                // 템플릿 2 추가 (Y축 아래로 오프셋)
-                var (n2, e2, b2) = TemplateManager.InstantiateTemplate(t2, "WO-2026-002", t2.Name);
-                float curMaxY = canvas.Nodes.Max(n => n.Y + n.Height);
-                float minNewY = n2.Min(n => n.Y);
-                float offsetY = (curMaxY + 120f) - minNewY;
-
-                foreach (var n in n2) n.Y += offsetY;
-                foreach (var b in b2) b.Y += offsetY;
-
-                if (b2.Count == 0 && n2.Count > 0)
-                {
-                    b2.Add(new WorkflowTitleBox
-                    {
-                        Title = $"[2공정군] {t2.Name} ({t2.TargetMaterial})",
-                        ColorHex = "#10b981",
-                        X = 40,
-                        Y = offsetY + 60,
-                        Width = 600,
-                        Height = 320
-                    });
-                }
-
-                canvas.Nodes.AddRange(n2);
-                canvas.Edges.AddRange(e2);
-                canvas.TitleBoxes.AddRange(b2);
-
-                canvas.ArrangeByTimeline(autoFitBaseHour: false);
-                canvas.ResetView();
-
-                Console.WriteLine($"MULTI_TEMPLATE_TEST: CanvasNodes={canvas.Nodes.Count}, TitleBoxes={canvas.TitleBoxes.Count}");
-            }
-        }
-
-        for (int i = 0; i < 20; i++)
-        {
-            Application.DoEvents();
-            System.Threading.Thread.Sleep(50);
-        }
-
+        // 2. Main Workflow Form Capture (with v1.5.3 top bar, refresh F5 button, auto-polling toggle, timeline interval)
         using (var bmp = new Bitmap(1920, 1080))
         {
             form.DrawToBitmap(bmp, new Rectangle(0, 0, 1920, 1080));
-            string path = @"C:\Users\USER\.gemini\antigravity\brain\c11cfd6b-e9b4-430b-acd3-767a137025e6\workflow_multi_template_v152.png";
+
+            // Overlay active toast notifications onto full screen capture
+            using (var g = Graphics.FromImage(bmp))
+            {
+                using var b1 = new Bitmap(toast1.Width, toast1.Height);
+                toast1.DrawToBitmap(b1, new Rectangle(0, 0, toast1.Width, toast1.Height));
+                g.DrawImage(b1, toast1.Location);
+
+                using var b2 = new Bitmap(toast2.Width, toast2.Height);
+                toast2.DrawToBitmap(b2, new Rectangle(0, 0, toast2.Width, toast2.Height));
+                g.DrawImage(b2, toast2.Location);
+
+                using var b3 = new Bitmap(toast3.Width, toast3.Height);
+                toast3.DrawToBitmap(b3, new Rectangle(0, 0, toast3.Width, toast3.Height));
+                g.DrawImage(b3, toast3.Location);
+            }
+
+            string path = @"C:\Users\USER\.gemini\antigravity\brain\c11cfd6b-e9b4-430b-acd3-767a137025e6\workflow_v153_main_screen.png";
             bmp.Save(path, ImageFormat.Png);
-            Console.WriteLine("SAVED_V152_SCREEN: " + path);
+            Console.WriteLine("SAVED_V153_SCREEN: " + path);
         }
+
+        toast1.Close();
+        toast2.Close();
+        toast3.Close();
         form.Close();
     }
 }
