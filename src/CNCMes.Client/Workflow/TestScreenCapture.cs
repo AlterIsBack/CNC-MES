@@ -47,10 +47,10 @@ public static class TestScreenCapture
 
         string baseDir = @"C:\Users\USER\.gemini\antigravity\brain\c11cfd6b-e9b4-430b-acd3-767a137025e6";
 
-        Console.WriteLine("=== [CNC-MES v1.6.3] 검증 시나리오 시작 ===");
+        Console.WriteLine("=== [CNC-MES v1.6.4] 검증 시나리오 시작 ===");
 
         // =========================================================================
-        // 시나리오 1: 1920x1080 기본 화면 및 버튼 배치 (v1.6.3 배지, 과거작업, 전체검색, 작업완료 버튼)
+        // 시나리오 1: 1920x1080 기본 화면 및 버튼 배치 (v1.6.4 배지, 과거작업, 전체검색, 작업완료 버튼)
         // =========================================================================
         var form = new WorkflowMainForm(api, session);
         form.Width = 1920;
@@ -140,13 +140,13 @@ public static class TestScreenCapture
         canvas.Invalidate();
         PumpEvents(25);
 
-        // Capture 1: v1.6.3 기본 메인 화면
+        // Capture 1: v1.6.4 기본 메인 화면
         using (var bmp1 = new Bitmap(1920, 1080))
         {
             form.DrawToBitmap(bmp1, new Rectangle(0, 0, 1920, 1080));
             string path1 = Path.Combine(baseDir, "workflow_v162_main_screen.png");
             bmp1.Save(path1, ImageFormat.Png);
-            Console.WriteLine("[PASS] 검증 1: v1.6.3 기본 메인 화면 캡처 저장 -> " + path1);
+            Console.WriteLine("[PASS] 검증 1: v1.6.4 기본 메인 화면 캡처 저장 -> " + path1);
         }
 
         // =========================================================================
@@ -286,7 +286,7 @@ public static class TestScreenCapture
         }
 
         try { form.Close(); } catch { }
-        Console.WriteLine("=== [CNC-MES v1.6.3] 모든 검증 시나리오 완료! ===");
+        Console.WriteLine("=== [CNC-MES v1.6.4] 모든 검증 시나리오 완료! ===");
         Environment.Exit(0);
     }
 
