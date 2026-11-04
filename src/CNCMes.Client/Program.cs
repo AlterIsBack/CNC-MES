@@ -9,6 +9,7 @@ internal static class Program
         if (args.Length > 0 && args[0] == "--capture")
         {
             TestScreenCapture.CaptureForm();
+            Environment.Exit(0);
             return;
         }
         if ((args.Length > 0 && args[0] == "--workflow-direct") || Environment.GetEnvironmentVariable("CNC_DIRECT_WORKFLOW") == "1")

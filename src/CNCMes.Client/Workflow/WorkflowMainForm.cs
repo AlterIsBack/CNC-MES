@@ -133,7 +133,7 @@ public class WorkflowMainForm : Form
             if (_lblAutoSaveBadge == null || _lblAutoSaveBadge.IsDisposed) return;
             if (InvokeRequired)
             {
-                try { Invoke(new Action(() => UpdateSaveBadge(e))); } catch { }
+                try { BeginInvoke(new Action(() => UpdateSaveBadge(e))); } catch { }
             }
             else
             {
@@ -158,7 +158,7 @@ public class WorkflowMainForm : Form
 
     private void InitializeUI()
     {
-        Text = $"CNC-MES 스마트 현장 터미널 v1.6.2 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
+        Text = $"CNC-MES 스마트 현장 터미널 v1.6.3 [워크플로우 제어] - {_session.DisplayName} ({_session.Role})";
         Size = new Size(1600, 960);
         MinimumSize = new Size(1280, 720);
         StartPosition = FormStartPosition.CenterScreen;
@@ -231,7 +231,20 @@ public class WorkflowMainForm : Form
         await LoadNoticesAsync();
         await LoadChatAsync();
         await LoadHistoryGridsAsync();
-        TryRestoreAutoSavedWorkflow();
+        bool restored = await TryRestoreAutoSavedWorkflowAsync();
+        if (!restored && _canvas.Nodes.Count == 0)
+        {
+            // 최초 실행 시 또는 복원 작업이 없을 경우 표준 워크플로우 즉시 생성 (빈 화면/멈춤 방지)
+            GenerateStandardWorkflowForSelectedPart(confirmIfNotEmpty: false);
+            if (_currentJob != null)
+            {
+                _currentJob.Nodes = _canvas.Nodes.ToList();
+                _currentJob.Edges = _canvas.Edges.ToList();
+                _currentJob.TitleBoxes = _canvas.TitleBoxes.ToList();
+                await _storageManager.SaveJobAsync(_currentJob, _session.DisplayName);
+                await _storageManager.SetLastActiveJobIdAsync(_currentJob.JobId);
+            }
+        }
         _isInitialDataLoaded = true;
 
         // 1-second live clock
@@ -282,7 +295,7 @@ public class WorkflowMainForm : Form
         pnlBrand.Controls.Add(pnlIcon);
 
         var lblBrand = new Label { Text = "CNC-MES", Location = new Point(44, 8), Font = new Font("맑은 고딕", 12f, FontStyle.Bold), ForeColor = Color.White, AutoSize = true };
-        var lblVer = new Label { Text = "v1.6.2 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
+        var lblVer = new Label { Text = "v1.6.3 [Workflow]", Location = new Point(136, 11), Font = new Font("Consolas", 8f, FontStyle.Bold), ForeColor = Palette.AccentSky, BackColor = Color.FromArgb(80, 8, 47, 73), AutoSize = true, Padding = new Padding(4, 1, 4, 1) };
         var lblStatus = new Label { Text = "● 서버 정상", Location = new Point(245, 11), Font = new Font("맑은 고딕", 8f, FontStyle.Bold), ForeColor = Palette.Green, BackColor = Color.FromArgb(80, 6, 78, 59), AutoSize = true, Padding = new Padding(5, 1, 5, 1) };
         var lblSub = new Label { Text = "WORKFLOW-BASED OPERATOR CONTROL SYSTEM", Location = new Point(45, 30), Font = new Font("Consolas", 7.2f), ForeColor = Palette.TextSlate400, AutoSize = true };
         pnlBrand.Controls.AddRange(new Control[] { lblBrand, lblVer, lblStatus, lblSub });
@@ -1123,6 +1136,11 @@ public class WorkflowMainForm : Form
 
         Deactivate += (s, e) => AutoSaveWorkflow();
         FormClosing += (s, e) => AutoSaveWorkflow();
+        FormClosed += (s, e) =>
+        {
+            try { _pollTimer?.Stop(); _pollTimer?.Dispose(); } catch { }
+            try { _chatPollTimer?.Stop(); _chatPollTimer?.Dispose(); } catch { }
+        };
 
         panel.Controls.Add(_detailPanel, 0, 1);
 
@@ -1573,7 +1591,7 @@ public class WorkflowMainForm : Form
             // 4. 이 부품의 최신 '진행 중' 작업 조회
             var ongoingJob = await _storageManager.GetActiveJobForPartAsync(currentOrder, currentPart, orderId, partId);
 
-            if (ongoingJob != null)
+            if (ongoingJob != null && ongoingJob.Nodes.Count > 0)
             {
                 // 기존 진행 작업 완벽 복원
                 _currentJob = ongoingJob;
@@ -1581,13 +1599,46 @@ public class WorkflowMainForm : Form
             }
             else
             {
-                // 진행 작업이 없으면 신규 Job 생성 (빈 캔버스)
-                _currentJob = _storageManager.CreateJob(currentOrder, currentPart, orderId, partId, author: _session.DisplayName);
-                _canvas.Clear();
-                _canvas.IsReadOnly = false;
-                _canvas.ReadOnlyBannerText = "";
-                ResetWorkflowConfirmation();
-                UpdateWorkflowStats();
+                // 레거시 캐시 확인
+                string cacheKey = GetCurrentPartCacheKey();
+                string legacyFile = Path.Combine(_localWorkflowDir, $"{cacheKey}.json");
+                bool legacyRestored = false;
+                if (File.Exists(legacyFile))
+                {
+                    try
+                    {
+                        string json = await File.ReadAllTextAsync(legacyFile);
+                        var data = JsonSerializer.Deserialize<WorkflowData>(json);
+                        if (data != null && data.Nodes.Count > 0)
+                        {
+                            _currentJob = _storageManager.CreateJob(currentOrder, currentPart, orderId, partId, author: _session.DisplayName);
+                            _currentJob.Nodes = data.Nodes;
+                            _currentJob.Edges = data.Edges;
+                            _currentJob.TitleBoxes = data.TitleBoxes;
+                            _currentJob.IsConfirmed = data.IsConfirmed;
+                            _currentJob.ConfirmedBy = data.ConfirmedBy;
+                            LoadJobIntoCanvas(_currentJob, isReadOnly: false);
+                            await _storageManager.SaveJobAsync(_currentJob, _session.DisplayName);
+                            legacyRestored = true;
+                        }
+                    }
+                    catch { }
+                }
+
+                if (!legacyRestored)
+                {
+                    // 진행 작업이 없으면 신규 Job 생성 및 표준 기본 워크플로우 즉시 배치
+                    _currentJob = _storageManager.CreateJob(currentOrder, currentPart, orderId, partId, author: _session.DisplayName);
+                    _canvas.Clear();
+                    _canvas.IsReadOnly = false;
+                    _canvas.ReadOnlyBannerText = "";
+                    ResetWorkflowConfirmation();
+                    GenerateStandardWorkflowForSelectedPart(confirmIfNotEmpty: false);
+                    _currentJob.Nodes = _canvas.Nodes.ToList();
+                    _currentJob.Edges = _canvas.Edges.ToList();
+                    _currentJob.TitleBoxes = _canvas.TitleBoxes.ToList();
+                    await _storageManager.SaveJobAsync(_currentJob, _session.DisplayName);
+                }
             }
 
             await _storageManager.SetLastActiveJobIdAsync(_currentJob.JobId);
@@ -1604,6 +1655,8 @@ public class WorkflowMainForm : Form
     /// </summary>
     private void SyncOrderAndPartSelection(string orderNumber, string partName)
     {
+        bool prev = _isSwitchingPart;
+        _isSwitchingPart = true;
         try
         {
             if (!string.IsNullOrEmpty(orderNumber))
@@ -1623,16 +1676,18 @@ public class WorkflowMainForm : Form
                 {
                     if (_lstParts.Items[i]?.ToString()?.Contains(partName) == true)
                     {
-                        _isSwitchingPart = true;
                         _lstParts.SelectedIndex = i;
                         _previousPartIndex = i;
-                        _isSwitchingPart = false;
                         break;
                     }
                 }
             }
         }
         catch { }
+        finally
+        {
+            _isSwitchingPart = prev;
+        }
     }
 
     private string GetCurrentPartCacheKey()
@@ -3701,7 +3756,7 @@ public class WorkflowMainForm : Form
         }, delayMs: 600);
     }
 
-    private bool TryRestoreAutoSavedWorkflow()
+    private async Task<bool> TryRestoreAutoSavedWorkflowAsync()
     {
         try
         {
@@ -3709,10 +3764,10 @@ public class WorkflowMainForm : Form
             _ = Task.Run(async () => await _storageManager.MigrateLegacyWorkflowsAsync());
 
             // 2. 신규 작업 단위 활성 세션 복구 시도
-            string? lastActiveJobId = _storageManager.GetLastActiveJobIdAsync().GetAwaiter().GetResult();
+            string? lastActiveJobId = await _storageManager.GetLastActiveJobIdAsync();
             if (!string.IsNullOrEmpty(lastActiveJobId))
             {
-                var job = _storageManager.LoadJobAsync(lastActiveJobId).GetAwaiter().GetResult();
+                var job = await _storageManager.LoadJobAsync(lastActiveJobId);
                 if (job != null && job.Nodes.Count > 0)
                 {
                     _currentJob = job;
@@ -3743,7 +3798,7 @@ public class WorkflowMainForm : Form
             string activeFile = Path.Combine(_localWorkflowDir, "autosave_current_active.json");
             if (File.Exists(activeFile))
             {
-                string json = File.ReadAllText(activeFile);
+                string json = await File.ReadAllTextAsync(activeFile);
                 var data = JsonSerializer.Deserialize<WorkflowData>(json);
                 if (data != null && data.Nodes.Count > 0)
                 {
@@ -3762,7 +3817,7 @@ public class WorkflowMainForm : Form
                     _currentJob.Nodes = data.Nodes;
                     _currentJob.Edges = data.Edges;
                     _currentJob.TitleBoxes = data.TitleBoxes;
-                    _ = _storageManager.SaveJobAsync(_currentJob, _session.DisplayName);
+                    await _storageManager.SaveJobAsync(_currentJob, _session.DisplayName);
 
                     if (_lblAutoSaveBadge != null)
                     {

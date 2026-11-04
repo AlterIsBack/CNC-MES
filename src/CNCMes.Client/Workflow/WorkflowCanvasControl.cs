@@ -1715,28 +1715,20 @@ public class WorkflowCanvasControl : UserControl
         }
         base.OnMouseDown(e);
 
-        if (IsReadOnly)
+        // 1. Check if clicked the Empty Guide Close or Generate Buttons (항상 최우선 처리)
+        if (Nodes.Count == 0 && !_hideEmptyCanvasGuide)
         {
-            if (e.Button == MouseButtons.Right)
+            if (_emptyCloseButtonTopRect.Contains(e.Location) || _emptyCloseButtonBottomRect.Contains(e.Location))
             {
-                _isPanning = true;
-                _panStartMouse = e.Location;
-                Cursor = Cursors.SizeAll;
+                _hideEmptyCanvasGuide = true;
+                Invalidate();
                 return;
             }
-            if (e.Button == MouseButtons.Left)
+            if (_emptyButtonScreenRect.Contains(e.Location))
             {
-                var worldPt = ScreenToWorld(e.Location);
-                var hitNode = Nodes.AsEnumerable().Reverse().FirstOrDefault(n => n.Bounds.Contains(worldPt));
-                if (hitNode != null)
-                {
-                    SetSelectedNodes(new[] { hitNode });
-                    NodeSelected?.Invoke(hitNode);
-                    SelectionChanged?.Invoke(SelectedNodes);
-                    Invalidate();
-                }
+                RequestGenerateDefaultWorkflow?.Invoke();
+                return;
             }
-            return;
         }
 
         if (IsReadOnly)
@@ -1762,6 +1754,7 @@ public class WorkflowCanvasControl : UserControl
             }
             return;
         }
+
         Focus(); // Ensure canvas captures keyboard focus for Delete/Ctrl+A keys
 
         _mouseDownLocation = e.Location;
@@ -1777,21 +1770,7 @@ public class WorkflowCanvasControl : UserControl
             return;
         }
 
-        // 1. Check if clicked the Empty Guide Close Buttons
-        if (Nodes.Count == 0 && !_hideEmptyCanvasGuide &&
-            (_emptyCloseButtonTopRect.Contains(e.Location) || _emptyCloseButtonBottomRect.Contains(e.Location)))
-        {
-            _hideEmptyCanvasGuide = true;
-            Invalidate();
-            return;
-        }
-
-        // 1-1. Check if clicked the Empty Guide Generate Button
-        if (Nodes.Count == 0 && !_hideEmptyCanvasGuide && _emptyButtonScreenRect.Contains(e.Location))
-        {
-            RequestGenerateDefaultWorkflow?.Invoke();
-            return;
-        }
+// (Empty guide handled upfront)
 
         // 2. Check if clicked the Cut Button on a Selected Edge
         if (_selectedEdge != null && !_selectedEdgeCutButtonScreenRect.IsEmpty && _selectedEdgeCutButtonScreenRect.Contains(e.Location))

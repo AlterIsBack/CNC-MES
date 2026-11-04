@@ -614,7 +614,7 @@ public class WorkflowStorageManager
             .Where(j => !j.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase) && !j.Status.Equals("완료", StringComparison.OrdinalIgnoreCase))
             .Where(j => (orderId > 0 && j.OrderId == orderId && partId > 0 && j.PartId == partId) ||
                         (!string.IsNullOrEmpty(orderNumber) && j.OrderNumber.Equals(orderNumber, StringComparison.OrdinalIgnoreCase) &&
-                         !string.IsNullOrEmpty(partName) && j.PartName.Equals(partName, StringComparison.OrdinalIgnoreCase)))
+                         !string.IsNullOrEmpty(partName) && (j.PartName.Equals(partName, StringComparison.OrdinalIgnoreCase) || j.PartName.Contains(partName, StringComparison.OrdinalIgnoreCase) || partName.Contains(j.PartName, StringComparison.OrdinalIgnoreCase))))
             .OrderByDescending(j => j.LastSavedAt)
             .FirstOrDefault();
         return match;
@@ -630,7 +630,7 @@ public class WorkflowStorageManager
             .Where(j => j.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase) || j.Status.Equals("완료", StringComparison.OrdinalIgnoreCase))
             .Where(j => (orderId > 0 && j.OrderId == orderId && partId > 0 && j.PartId == partId) ||
                         (!string.IsNullOrEmpty(orderNumber) && j.OrderNumber.Equals(orderNumber, StringComparison.OrdinalIgnoreCase) &&
-                         !string.IsNullOrEmpty(partName) && j.PartName.Equals(partName, StringComparison.OrdinalIgnoreCase)))
+                         !string.IsNullOrEmpty(partName) && (j.PartName.Equals(partName, StringComparison.OrdinalIgnoreCase) || j.PartName.Contains(partName, StringComparison.OrdinalIgnoreCase) || partName.Contains(j.PartName, StringComparison.OrdinalIgnoreCase))))
             .OrderByDescending(j => j.CompletedAt ?? j.LastSavedAt)
             .ToList();
     }
